@@ -483,6 +483,23 @@ export const applyCivDecision: any = spacetimedb.reducer(
         if (tgt) ctx.db.territory.id.update({ ...tgt, owner_civ_id: civ_id });
         break;
       }
+      case 'conquer': {
+        if (civ.aggression < 6) break;
+        // Must be at war with the territory's owner
+        const tgt = territories.find(
+          (t: any) => t.owner_civ_id !== -1 && t.owner_civ_id !== civ_id && t.name.toLowerCase() === target.toLowerCase()
+        );
+        if (!tgt) break;
+        const alliances = [...ctx.db.alliance.iter()];
+        const atWar = alliances.some(
+          (a: any) =>
+            a.status === 'war' &&
+            ((a.civ_a_id === civ_id && a.civ_b_id === tgt.owner_civ_id) ||
+             (a.civ_a_id === tgt.owner_civ_id && a.civ_b_id === civ_id))
+        );
+        if (atWar) ctx.db.territory.id.update({ ...tgt, owner_civ_id: civ_id });
+        break;
+      }
       case 'build': {
         const key = target.toLowerCase();
         const allowed = ['aggression', 'piety', 'mercantile', 'scholarly', 'stability'];
@@ -547,6 +564,142 @@ export const applyCivDecision: any = spacetimedb.reducer(
       entry_type: 'action',
       civ_color: civ.color,
       god_color: '',
+      text: narration,
+      related_territory_id: -1,
+    });
+  }
+);
+
+const GOD_COLORS = ['#F59E0B', '#10B981', '#EC4899', '#8B5CF6', '#EF4444', '#06B6D4', '#F97316', '#14B8A6'];
+
+const MIRACLE_COSTS: Record<string, number> = {
+  bless: 10,
+  curse: 20,
+  portent: 15,
+  inspire: 10,
+  strike: 50,
+  reveal: 5,
+};
+
+export const joinWorld: any = spacetimedb.reducer(
+  { god_name: t.string() },
+  (ctx: any, { god_name }: any) => {
+    const existing = [...ctx.db.god.iter()].find((g: any) => g.identity.isEqual(ctx.sender));
+    if (existing) return;
+
+    const usedColors = [...ctx.db.god.iter()].map((g: any) => g.color);
+    const available = GOD_COLORS.filter(c => !usedColors.includes(c));
+    const colorPool = available.length > 0 ? available : GOD_COLORS;
+    const color = colorPool[ctx.random.integerInRange(0, colorPool.length - 1)];
+    const directiveIndex = ctx.random.integerInRange(0, 7);
+
+    const meta = ctx.db.worldMeta.id.find(0);
+    const godId = meta ? meta.tick_count * 1000 + ctx.random.integerInRange(0, 999) : ctx.random.integerInRange(0, 999999);
+
+    ctx.db.god.insert({
+      id: godId,
+      identity: ctx.sender,
+      name: god_name,
+      color,
+      faith_balance: 80,
+      secret_directive: directiveIndex,
+    });
+
+    ctx.db.chronicleEntry.insert({
+      id: godId + 1,
+      tick_number: meta?.tick_count ?? 0,
+      entry_type: 'event',
+      civ_color: '',
+      god_color: color,
+      text: `A new god awakens: ${god_name}. The world trembles.`,
+      related_territory_id: -1,
+    });
+  }
+);
+
+export const castMiracle: any = spacetimedb.reducer(
+  { miracle_type: t.string(), target_id: t.u32() },
+  (ctx: any, { miracle_type, target_id }: any) => {
+    const god = [...ctx.db.god.iter()].find((g: any) => g.identity.isEqual(ctx.sender));
+    if (!god) return;
+
+    const cost = MIRACLE_COSTS[miracle_type];
+    if (cost === undefined || god.faith_balance < cost) return;
+
+    ctx.db.god.id.update({ ...god, faith_balance: god.faith_balance - cost });
+
+    const meta = ctx.db.worldMeta.id.find(0);
+    const tickNum = meta?.tick_count ?? 0;
+    const miracleId = tickNum * 10000 + god.id;
+
+    switch (miracle_type) {
+      case 'bless': {
+        const civ = ctx.db.civilization.id.find(target_id);
+        if (civ) ctx.db.civilization.id.update({ ...civ, stability: Math.min(civ.stability + 2, 10) });
+        break;
+      }
+      case 'curse': {
+        const territory = ctx.db.territory.id.find(target_id);
+        if (territory && territory.owner_civ_id >= 0) {
+          ctx.db.territory.id.update({ ...territory, current_event: 'plague' });
+          const civ = ctx.db.civilization.id.find(territory.owner_civ_id);
+          if (civ) {
+            const newPop = Math.max(civ.population - 15, 0);
+            ctx.db.civilization.id.update({ ...civ, population: newPop, is_alive: newPop > 0 });
+          }
+        }
+        break;
+      }
+      case 'portent': {
+        const civ = ctx.db.civilization.id.find(target_id);
+        if (civ) ctx.db.civilization.id.update({ ...civ, current_thought: 'A divine omen fills the sky. Something is about to change.' });
+        break;
+      }
+      case 'inspire': {
+        const civ = ctx.db.civilization.id.find(target_id);
+        if (civ) ctx.db.civilization.id.update({ ...civ, scholarly: Math.min(civ.scholarly + 1, 10) });
+        break;
+      }
+      case 'strike': {
+        const territory = ctx.db.territory.id.find(target_id);
+        if (territory && territory.owner_civ_id >= 0) {
+          ctx.db.territory.id.update({ ...territory, current_event: 'comet' });
+          const civ = ctx.db.civilization.id.find(territory.owner_civ_id);
+          if (civ) {
+            const newPop = Math.max(civ.population - 25, 0);
+            ctx.db.civilization.id.update({ ...civ, population: newPop, stability: Math.max(civ.stability - 2, 0), is_alive: newPop > 0 });
+          }
+        }
+        break;
+      }
+    }
+
+    ctx.db.miracleCast.insert({
+      id: miracleId,
+      god_id: god.id,
+      miracle_type,
+      target_id,
+      tick_number: tickNum,
+      narration: '',
+    });
+  }
+);
+
+// Called by browser after Claude generates miracle narration
+export const recordMiracleNarration: any = spacetimedb.reducer(
+  { miracle_id: t.u32(), narration: t.string(), god_color: t.string() },
+  (ctx: any, { miracle_id, narration, god_color }: any) => {
+    const miracle = ctx.db.miracleCast.id.find(miracle_id);
+    if (!miracle) return;
+    ctx.db.miracleCast.id.update({ ...miracle, narration });
+
+    const meta = ctx.db.worldMeta.id.find(0);
+    ctx.db.chronicleEntry.insert({
+      id: miracle_id + 500000,
+      tick_number: meta?.tick_count ?? 0,
+      entry_type: 'miracle',
+      civ_color: '',
+      god_color,
       text: narration,
       related_territory_id: -1,
     });

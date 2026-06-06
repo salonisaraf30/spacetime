@@ -35,7 +35,10 @@ import {
 
 // Import all reducer arg schemas
 import ApplyCivDecisionReducer from "./apply_civ_decision_reducer";
+import CastMiracleReducer from "./cast_miracle_reducer";
 import ForceSeedReducer from "./force_seed_reducer";
+import JoinWorldReducer from "./join_world_reducer";
+import RecordMiracleNarrationReducer from "./record_miracle_narration_reducer";
 
 // Import all procedure arg schemas
 
@@ -146,7 +149,10 @@ const tablesSchema = __schema({
 /** The schema information for all reducers in this module. This is defined the same way as the reducers would have been defined in the server, except the body of the reducer is omitted in code generation. */
 const reducersSchema = __reducers(
   __reducerSchema("apply_civ_decision", ApplyCivDecisionReducer),
+  __reducerSchema("cast_miracle", CastMiracleReducer),
   __reducerSchema("force_seed", ForceSeedReducer),
+  __reducerSchema("join_world", JoinWorldReducer),
+  __reducerSchema("record_miracle_narration", RecordMiracleNarrationReducer),
 );
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

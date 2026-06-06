@@ -7,8 +7,14 @@ import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
 import ApplyCivDecisionReducer from "../apply_civ_decision_reducer";
+import CastMiracleReducer from "../cast_miracle_reducer";
 import ForceSeedReducer from "../force_seed_reducer";
+import JoinWorldReducer from "../join_world_reducer";
+import RecordMiracleNarrationReducer from "../record_miracle_narration_reducer";
 
 export type ApplyCivDecisionParams = __Infer<typeof ApplyCivDecisionReducer>;
+export type CastMiracleParams = __Infer<typeof CastMiracleReducer>;
 export type ForceSeedParams = __Infer<typeof ForceSeedReducer>;
+export type JoinWorldParams = __Infer<typeof JoinWorldReducer>;
+export type RecordMiracleNarrationParams = __Infer<typeof RecordMiracleNarrationReducer>;
 

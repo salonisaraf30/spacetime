@@ -20,10 +20,7 @@ body {
   width: 100%;
   height: 100%;
   overflow-x: hidden;
-  background:
-    radial-gradient(circle at top left, rgba(29, 78, 216, 0.28), transparent 30%),
-    radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 22%),
-    var(--bg);
+  background: #c8b49a;
   color: var(--text);
   font-family: Georgia, 'Times New Roman', serif;
 }
@@ -158,7 +155,8 @@ a {
 
 .map-image {
   display: block;
-  width: min(100vw, 1024px);
+  width: 1380px;
+  max-width: none;
   height: auto;
   pointer-events: none;
   user-select: none;

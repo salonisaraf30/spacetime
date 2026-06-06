@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTable, useSpacetimeDB } from "spacetimedb/react";
-import { DbConnection, reducers, tables } from "../../src/module_bindings";
+import { DbConnection, tables } from "../../src/module_bindings";
 import { TERRITORY_TO_PATH, TERRITORY_PATHS } from "../constants/territory-paths";
 
 const EVENT_OVERLAYS: Record<string, string> = {
@@ -20,10 +20,36 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
   const [territories, territoriesLoading] = useTable(tables.territory);
   const [civilizations] = useTable(tables.civilization);
   const [worldMeta] = useTable(tables.worldMeta);
+  const [alliances] = useTable(tables.alliance);
+  const [miracleCasts] = useTable(tables.miracleCast);
   const world = worldMeta[0];
 
+  const MAP_W = 1380;
+  const MAP_H = 752;
+
+  const getFitView = () => {
+    if (typeof window === 'undefined') return { scale: 1, x: 0, y: 0 };
+    const scale = Math.min(window.innerWidth / MAP_W, window.innerHeight / MAP_H);
+    return {
+      scale,
+      x: (window.innerWidth - MAP_W * scale) / 2,
+      y: (window.innerHeight - MAP_H * scale) / 2,
+    };
+  };
+
+  const clampView = (x: number, y: number, scale: number) => {
+    const mapW = MAP_W * scale;
+    const mapH = MAP_H * scale;
+    const vW = window.innerWidth;
+    const vH = window.innerHeight;
+    return {
+      x: mapW <= vW ? (vW - mapW) / 2 : Math.min(0, Math.max(x, vW - mapW)),
+      y: mapH <= vH ? (vH - mapH) / 2 : Math.min(0, Math.max(y, vH - mapH)),
+    };
+  };
+
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+  const [view, setView] = useState(getFitView);
   const dragRef = useRef<{
     active: boolean;
     pointerId: number | null;
@@ -40,15 +66,14 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
   useEffect(() => {
     if (!conn || !connected || subscribedRef.current) return;
     subscribedRef.current = true;
-    console.log("[sub] subscribing...");
-    try {
-      conn.subscriptionBuilder()
-        .onApplied(() => console.log("[GameMap] subscription applied"))
-        .onError((e: unknown) => console.error("[GameMap] subscription error:", e))
-        .subscribe(['SELECT * FROM world_meta']);
-    } catch (e) {
-      console.error("[sub] error:", e);
-    }
+    conn.subscriptionBuilder()
+      .subscribe([
+        'SELECT * FROM territory',
+        'SELECT * FROM civilization',
+        'SELECT * FROM world_meta',
+        'SELECT * FROM alliance',
+        'SELECT * FROM miracle_cast',
+      ]);
   }, [conn, connected]);
 
   const [svgCursor, setSvgCursor] = useState<{ x: number; y: number } | null>(null);
@@ -61,24 +86,43 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
   }, [civilizations]);
 
   useEffect(() => {
-    console.log("[GameMap] connected:", connected, "worldMeta:", worldMeta.length, "territories:", territories.length, "civs:", civilizations.length);
-  }, [connected, worldMeta, territories, civilizations]);
-
-  useEffect(() => {
-    if (!world || !connected) return;
-    console.log("[GameMap] tick fired:", world.tickCount);
-    fetch("/api/ai-tick", { method: "POST" }).catch(console.error);
+    if (!world || !connected || !conn) return;
+    const recentMiracles = miracleCasts.filter(
+      (m) => m.tickNumber >= world.tickCount - 3
+    );
+    fetch("/api/ai-tick", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ civs: civilizations, territories, alliances, worldMeta: world, recentMiracles }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.decisions) return;
+        for (const { civId, decision } of data.decisions) {
+          conn.reducers.applyCivDecision({
+            civId,
+            action: decision.action,
+            target: decision.target,
+            narration: decision.narration,
+            thought: decision.thought,
+          });
+        }
+      })
+      .catch(console.error);
   }, [world?.tickCount]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "0") setView({ scale: 1, x: 0, y: 0 });
+      if (e.key === "0") setView(getFitView());
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  const clampScale = (s: number) => Math.min(3.5, Math.max(0.65, s));
+  const clampScale = (s: number) => {
+    const minScale = Math.min(window.innerWidth / MAP_W, window.innerHeight / MAP_H);
+    return Math.min(3.5, Math.max(minScale, s));
+  };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -88,7 +132,11 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current.active || dragRef.current.pointerId !== e.pointerId) return;
-    setView(v => ({ ...v, x: dragRef.current.originX + e.clientX - dragRef.current.startX, y: dragRef.current.originY + e.clientY - dragRef.current.startY }));
+    setView(v => {
+      const rawX = dragRef.current.originX + e.clientX - dragRef.current.startX;
+      const rawY = dragRef.current.originY + e.clientY - dragRef.current.startY;
+      return { ...v, ...clampView(rawX, rawY, v.scale) };
+    });
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -109,7 +157,9 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
       const nextScale = clampScale(v.scale * factor);
       const worldX = (cursorX - v.x) / v.scale;
       const worldY = (cursorY - v.y) / v.scale;
-      return { scale: nextScale, x: cursorX - worldX * nextScale, y: cursorY - worldY * nextScale };
+      const rawX = cursorX - worldX * nextScale;
+      const rawY = cursorY - worldY * nextScale;
+      return { scale: nextScale, ...clampView(rawX, rawY, nextScale) };
     });
   };
 
@@ -181,10 +231,6 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
                 {svgCursor.x},{svgCursor.y}
               </text>
             )}
-          {/* DEBUG: show all paths without DB data */}
-            {Object.entries(TERRITORY_PATHS).map(([id, d]) => (
-              <path key={id} d={d} fill="none" stroke="red" strokeWidth="2" />
-            ))}
             {!territoriesLoading && territories.map(territory => {
               const pathId = TERRITORY_TO_PATH[territory.id];
               if (!pathId || !TERRITORY_PATHS[pathId]) return null;
@@ -200,8 +246,8 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
                     d={TERRITORY_PATHS[pathId]}
                     fill={fillColor}
                     fillOpacity={fillColor === "transparent" ? 0 : 0.35}
-                    stroke="red"
-                    strokeWidth="2"
+                    stroke="transparent"
+                    strokeWidth="10"
                     style={{ cursor: "pointer", transition: "fill 0.7s" }}
                     onClick={() => onTerritoryClick?.(territory.id)}
                   />
