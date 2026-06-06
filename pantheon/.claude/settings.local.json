@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "WebFetch(domain:localhost)",
+      "PowerShell(Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; Start-Process \"msedge\" \"http://localhost:3000\" -WindowStyle Maximized; Start-Sleep -Seconds 4; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap\\($screen.Width, $screen.Height\\); $g = [System.Drawing.Graphics]::FromImage\\($bmp\\); $g.CopyFromScreen\\($screen.Location, [System.Drawing.Point]::Empty, $screen.Size\\); $path = \"$env:TEMP\\\\map_check.png\"; $bmp.Save\\($path\\); $g.Dispose\\(\\); $bmp.Dispose\\(\\); Write-Output $path)",
+      "PowerShell(Start-Sleep -Seconds 5; Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap\\($screen.Width, $screen.Height\\); $g = [System.Drawing.Graphics]::FromImage\\($bmp\\); $g.CopyFromScreen\\($screen.Location, [System.Drawing.Point]::Empty, $screen.Size\\); $path = \"$env:TEMP\\\\map_check2.png\"; $bmp.Save\\($path\\); $g.Dispose\\(\\); $bmp.Dispose\\(\\); Write-Output $path)",
+      "PowerShell(Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\(\"C:\\\\Users\\\\shrey\\\\Desktop\\\\spacehack\\\\spacetime\\\\pantheon\\\\public\\\\map.png\"\\); Write-Output \"$\\($img.Width\\) x $\\($img.Height\\)\"; $img.Dispose\\(\\))",
+      "Bash(git checkout *)",
+      "Bash(npx kill-port *)"
+    ]
+  }
+}

@@ -1,5 +1,5 @@
-import { WorldMap } from './WorldMap';
+import { GameMap } from './components/GameMap';
 
 export default function Home() {
-  return <WorldMap />;
+  return <GameMap />;
 }
