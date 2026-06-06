@@ -6,5 +6,9 @@
 import { type Infer as __Infer } from "spacetimedb";
 
 // Import all reducer arg schemas
+import ApplyCivDecisionReducer from "../apply_civ_decision_reducer";
+import ForceSeedReducer from "../force_seed_reducer";
 
+export type ApplyCivDecisionParams = __Infer<typeof ApplyCivDecisionReducer>;
+export type ForceSeedParams = __Infer<typeof ForceSeedReducer>;
 

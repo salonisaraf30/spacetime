@@ -370,14 +370,14 @@ function seedWorld(ctx: any) {
 }
 
 function ensureTimers(ctx: any) {
-  if ([...ctx.db.worldTickTimer.iter()].length === 0) {
+  if (ctx.db.worldTickTimer.count() === 0) {
     ctx.db.worldTickTimer.insert({
       scheduled_id: 0n,
       scheduled_at: ScheduleAt.interval(15_000_000n),
     });
   }
 
-  if ([...ctx.db.regenFaithTimer.iter()].length === 0) {
+  if (ctx.db.regenFaithTimer.count() === 0) {
     ctx.db.regenFaithTimer.insert({
       scheduled_id: 0n,
       scheduled_at: ScheduleAt.interval(10_000_000n),
@@ -386,16 +386,40 @@ function ensureTimers(ctx: any) {
 }
 
 export const init = spacetimedb.init((ctx: any) => {
+  ctx.db.regenFaithTimer.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(10_000_000n),
+
+  });
+  ctx.db.worldTickTimer.insert({
+    scheduled_id: 0n,
+    scheduled_at: ScheduleAt.interval(15_000_000n),
+  });
   seedWorld(ctx);
 });
 
 export const onConnect = spacetimedb.clientConnected((ctx: any) => {
+  try {
+    seedWorld(ctx);
+  } catch (error) {
+    console.error('clientConnected/seedWorld failed:', error);
+  }
+});
+
+// Emergency manual seed — call if init didn't run
+export const forceSeed = spacetimedb.reducer((ctx: any) => {
+  const existing = ctx.db.worldMeta.id.find(0);
+  if (existing) {
+    ctx.db.worldMeta.id.update({ ...existing, tick_count: existing.tick_count });
+    return;
+  }
   seedWorld(ctx);
 });
 
 export const worldTick: any = spacetimedb.reducer(
   { timer: worldTickTimer.rowType },
   (ctx: any, { timer }: any) => {
+    console.log("[worldTick] tick fired at", new Date().toISOString());
     const meta = ctx.db.worldMeta.id.find(0);
     if (!meta || !meta.is_running) return;
 
@@ -429,9 +453,102 @@ export const worldTick: any = spacetimedb.reducer(
       });
     }
 
-    ctx.db.worldTickTimer.insert({
-      scheduled_id: 0n,
-      scheduled_at: ScheduleAt.interval(15_000_000n),
+
+  }
+);
+
+export const applyCivDecision: any = spacetimedb.reducer(
+  {
+    civ_id: t.u32(),
+    action: t.string(),
+    target: t.string(),
+    narration: t.string(),
+    thought: t.string(),
+  },
+  (ctx: any, { civ_id, action, target, narration, thought }: any) => {
+    const meta = ctx.db.worldMeta.id.find(0);
+    if (!meta) return;
+
+    const civ = ctx.db.civilization.id.find(civ_id);
+    if (!civ || !civ.is_alive) return;
+
+    const territories = [...ctx.db.territory.iter()];
+    const civs = [...ctx.db.civilization.iter()];
+
+    switch (action) {
+      case 'expand': {
+        const tgt = territories.find(
+          (t: any) => t.owner_civ_id === -1 && t.name.toLowerCase() === target.toLowerCase()
+        );
+        if (tgt) ctx.db.territory.id.update({ ...tgt, owner_civ_id: civ_id });
+        break;
+      }
+      case 'build': {
+        const key = target.toLowerCase();
+        const allowed = ['aggression', 'piety', 'mercantile', 'scholarly', 'stability'];
+        if (allowed.includes(key)) {
+          ctx.db.civilization.id.update({ ...civ, [key]: Math.min((civ[key] as number) + 1, 10) });
+        }
+        break;
+      }
+      case 'declare_war':
+      case 'form_alliance': {
+        const other = civs.find((c: any) => c.name.toLowerCase() === target.toLowerCase());
+        if (other) {
+          const alliances = [...ctx.db.alliance.iter()];
+          const existing = alliances.find(
+            (a: any) =>
+              (a.civ_a_id === civ_id && a.civ_b_id === other.id) ||
+              (a.civ_a_id === other.id && a.civ_b_id === civ_id)
+          );
+          const status = action === 'declare_war' ? 'war' : 'alliance';
+          if (existing) {
+            ctx.db.alliance.id.update({ ...existing, status });
+          } else {
+            ctx.db.alliance.insert({ id: meta.tick_count * 100 + civ_id, civ_a_id: civ_id, civ_b_id: other.id, status });
+          }
+        }
+        break;
+      }
+      case 'develop_tech': {
+        if (civ.scholarly >= 4) ctx.db.civilization.id.update({ ...civ, tech_level: civ.tech_level + 1 });
+        break;
+      }
+      case 'send_envoy': {
+        const other = civs.find((c: any) => c.name.toLowerCase() === target.toLowerCase());
+        if (other && civ.mercantile >= 5) {
+          ctx.db.civilization.id.update({ ...other, mercantile: Math.min(other.mercantile + 1, 10) });
+        }
+        break;
+      }
+      case 'convert': {
+        const other = civs.find((c: any) => c.name.toLowerCase() === target.toLowerCase());
+        if (other && civ.piety >= 7) {
+          ctx.db.civilization.id.update({ ...other, piety: Math.min(other.piety + 1, 10) });
+        }
+        break;
+      }
+    }
+
+    ctx.db.civilization.id.update({ ...civ, current_thought: thought });
+
+    ctx.db.civAction.insert({
+      id: meta.tick_count * 10 + civ_id,
+      civ_id,
+      action_type: action,
+      target,
+      tick_number: meta.tick_count,
+      narration,
+    });
+
+    ctx.db.chronicleEntry.insert({
+      id: meta.tick_count * 100 + civ_id,
+      tick_number: meta.tick_count,
+      entry_type: 'action',
+      civ_color: civ.color,
+      god_color: '',
+      text: narration,
+      related_territory_id: -1,
     });
   }
 );
@@ -439,14 +556,12 @@ export const worldTick: any = spacetimedb.reducer(
 export const regenFaith: any = spacetimedb.reducer(
   { timer: regenFaithTimer.rowType },
   (ctx: any, { timer }: any) => {
+    console.log("[regenFaith] tick fired at", new Date().toISOString());
     for (const god of ctx.db.god.iter()) {
       god.faith_balance = Math.min(god.faith_balance + 5, 200);
       ctx.db.god.id.update(god);
     }
 
-    ctx.db.regenFaithTimer.insert({
-      scheduled_id: 0n,
-      scheduled_at: ScheduleAt.interval(10_000_000n),
-    });
+
   }
 );

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTable, useSpacetimeDB } from "spacetimedb/react";
-import { DbConnection, tables } from "../../src/module_bindings";
+import { DbConnection, reducers, tables } from "../../src/module_bindings";
 import { TERRITORY_TO_PATH, TERRITORY_PATHS } from "../constants/territory-paths";
 
 const EVENT_OVERLAYS: Record<string, string> = {
@@ -35,11 +35,20 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
 
   const { isActive: connected, getConnection } = useSpacetimeDB();
   const conn = getConnection() as DbConnection | null;
+  const subscribedRef = useRef(false);
 
   useEffect(() => {
-    if (!conn || !connected) return;
-    conn.subscriptionBuilder()
-      .subscribe([tables.territory, tables.civilization, tables.worldMeta]);
+    if (!conn || !connected || subscribedRef.current) return;
+    subscribedRef.current = true;
+    console.log("[sub] subscribing...");
+    try {
+      conn.subscriptionBuilder()
+        .onApplied(() => console.log("[GameMap] subscription applied"))
+        .onError((e: unknown) => console.error("[GameMap] subscription error:", e))
+        .subscribe(['SELECT * FROM world_meta']);
+    } catch (e) {
+      console.error("[sub] error:", e);
+    }
   }, [conn, connected]);
 
   const [svgCursor, setSvgCursor] = useState<{ x: number; y: number } | null>(null);
@@ -50,6 +59,16 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
     for (const civ of civilizations) map[civ.id] = civ.color;
     return map;
   }, [civilizations]);
+
+  useEffect(() => {
+    console.log("[GameMap] connected:", connected, "worldMeta:", worldMeta.length, "territories:", territories.length, "civs:", civilizations.length);
+  }, [connected, worldMeta, territories, civilizations]);
+
+  useEffect(() => {
+    if (!world || !connected) return;
+    console.log("[GameMap] tick fired:", world.tickCount);
+    fetch("/api/ai-tick", { method: "POST" }).catch(console.error);
+  }, [world?.tickCount]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {

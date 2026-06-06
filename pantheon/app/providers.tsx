@@ -35,9 +35,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         .withUri(HOST)
         .withDatabaseName(DB_NAME)
         .withToken(
-          typeof window !== 'undefined'
-            ? localStorage.getItem(TOKEN_KEY) || undefined
-            : undefined
+          // typeof window !== 'undefined'
+          //  // ? localStorage.getItem(TOKEN_KEY) || undefined
+          //   : undefined
+          process.env.SPACETIMEDB_TOKEN
         )
         .onConnect(onConnect)
         .onDisconnect(onDisconnect)

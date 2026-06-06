@@ -8,7 +8,16 @@
       "PowerShell(Start-Sleep -Seconds 5; Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap\\($screen.Width, $screen.Height\\); $g = [System.Drawing.Graphics]::FromImage\\($bmp\\); $g.CopyFromScreen\\($screen.Location, [System.Drawing.Point]::Empty, $screen.Size\\); $path = \"$env:TEMP\\\\map_check2.png\"; $bmp.Save\\($path\\); $g.Dispose\\(\\); $bmp.Dispose\\(\\); Write-Output $path)",
       "PowerShell(Add-Type -AssemblyName System.Drawing; $img = [System.Drawing.Image]::FromFile\\(\"C:\\\\Users\\\\shrey\\\\Desktop\\\\spacehack\\\\spacetime\\\\pantheon\\\\public\\\\map.png\"\\); Write-Output \"$\\($img.Width\\) x $\\($img.Height\\)\"; $img.Dispose\\(\\))",
       "Bash(git checkout *)",
-      "Bash(npx kill-port *)"
+      "Bash(npx kill-port *)",
+      "Skill(typescript-server)",
+      "Bash(npm install *)",
+      "Bash(spacetime login *)",
+      "Bash(curl *)",
+      "Skill(cli)",
+      "Bash(spacetime describe *)",
+      "Bash(spacetime list *)",
+      "Bash(spacetime subscribe *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('ok'\\)\")"
     ]
   }
 }

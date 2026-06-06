@@ -8,6 +8,12 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from 'spacetimedb';
+} from "spacetimedb";
 
-export default {};
+export default {
+  civId: __t.u32(),
+  action: __t.string(),
+  target: __t.string(),
+  narration: __t.string(),
+  thought: __t.string(),
+};
