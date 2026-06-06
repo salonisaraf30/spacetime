@@ -112,17 +112,27 @@ a {
 
 .hud-left {
   left: 1rem;
-  max-width: min(36rem, calc(100vw - 2rem));
-  padding: 1rem 1.1rem;
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.5rem 0.75rem;
   border: 1px solid var(--line);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   background: rgba(7, 12, 24, 0.76);
   backdrop-filter: blur(10px);
 }
 
 .hud-left h1 {
-  font-size: clamp(1.6rem, 3vw, 3rem);
+  font-size: 1.2rem;
   line-height: 1;
+}
+
+.hud-left .eyebrow {
+  font-size: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.hud-left .subtitle {
+  font-size: 0.72rem;
+  margin-top: 0.3rem;
 }
 
 .hud-right {

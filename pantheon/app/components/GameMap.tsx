@@ -76,7 +76,6 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
       ]);
   }, [conn, connected]);
 
-  const [svgCursor, setSvgCursor] = useState<{ x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   const civColorMap = useMemo(() => {
@@ -215,22 +214,11 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
             viewBox="0 0 1380 752"
             preserveAspectRatio="xMidYMid meet"
             style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "all" }}
-            onMouseMove={(e) => {
-              const svg = svgRef.current;
-              if (!svg) return;
-              const pt = svg.createSVGPoint();
-              pt.x = e.clientX; pt.y = e.clientY;
-              const p = pt.matrixTransform(svg.getScreenCTM()!.inverse());
-              setSvgCursor({ x: Math.round(p.x), y: Math.round(p.y) });
-            }}
-            onMouseLeave={() => setSvgCursor(null)}
           >
-            {/* DEBUG: coordinate display */}
-            {svgCursor && (
-              <text x={svgCursor.x + 6} y={svgCursor.y - 6} fill="yellow" fontSize="14" fontFamily="monospace" style={{ pointerEvents: "none" }}>
-                {svgCursor.x},{svgCursor.y}
-              </text>
-            )}
+            {/* DEBUG: static borders — visible even when DB is empty */}
+            {Object.entries(TERRITORY_PATHS).map(([id, d]) => (
+              <path key={`debug-${id}`} d={d} fill="none" stroke="red" strokeWidth="2" />
+            ))}
             {!territoriesLoading && territories.map(territory => {
               const pathId = TERRITORY_TO_PATH[territory.id];
               if (!pathId || !TERRITORY_PATHS[pathId]) return null;
@@ -246,8 +234,8 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
                     d={TERRITORY_PATHS[pathId]}
                     fill={fillColor}
                     fillOpacity={fillColor === "transparent" ? 0 : 0.35}
-                    stroke="transparent"
-                    strokeWidth="10"
+                    stroke="red"
+                    strokeWidth="2"
                     style={{ cursor: "pointer", transition: "fill 0.7s" }}
                     onClick={() => onTerritoryClick?.(territory.id)}
                   />
