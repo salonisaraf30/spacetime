@@ -8,9 +8,103 @@ import {
   t as __t,
   type AlgebraicTypeType as __AlgebraicTypeType,
   type Infer as __Infer,
-} from 'spacetimedb';
+} from "spacetimedb";
 
-export const Person = __t.object('Person', {
-  name: __t.string(),
+export const Alliance = __t.object("Alliance", {
+  id: __t.u32(),
+  civAId: __t.u32(),
+  civBId: __t.u32(),
+  status: __t.string(),
 });
-export type Person = __Infer<typeof Person>;
+export type Alliance = __Infer<typeof Alliance>;
+
+export const ChronicleEntry = __t.object("ChronicleEntry", {
+  id: __t.u32(),
+  tickNumber: __t.u32(),
+  entryType: __t.string(),
+  civColor: __t.string(),
+  godColor: __t.string(),
+  text: __t.string(),
+  relatedTerritoryId: __t.i32(),
+});
+export type ChronicleEntry = __Infer<typeof ChronicleEntry>;
+
+export const CivAction = __t.object("CivAction", {
+  id: __t.u32(),
+  civId: __t.u32(),
+  actionType: __t.string(),
+  target: __t.string(),
+  tickNumber: __t.u32(),
+  narration: __t.string(),
+});
+export type CivAction = __Infer<typeof CivAction>;
+
+export const Civilization = __t.object("Civilization", {
+  id: __t.u32(),
+  name: __t.string(),
+  color: __t.string(),
+  population: __t.i32(),
+  techLevel: __t.i32(),
+  aggression: __t.i32(),
+  piety: __t.i32(),
+  mercantile: __t.i32(),
+  scholarly: __t.i32(),
+  stability: __t.i32(),
+  leaderPersona: __t.string(),
+  currentThought: __t.string(),
+  isAlive: __t.bool(),
+});
+export type Civilization = __Infer<typeof Civilization>;
+
+export const God = __t.object("God", {
+  id: __t.u32(),
+  identity: __t.identity(),
+  name: __t.string(),
+  color: __t.string(),
+  faithBalance: __t.i32(),
+  secretDirective: __t.i32(),
+});
+export type God = __Infer<typeof God>;
+
+export const MiracleCast = __t.object("MiracleCast", {
+  id: __t.u32(),
+  godId: __t.u32(),
+  miracleType: __t.string(),
+  targetId: __t.u32(),
+  tickNumber: __t.u32(),
+  narration: __t.string(),
+});
+export type MiracleCast = __Infer<typeof MiracleCast>;
+
+export const RegenFaithTimer = __t.object("RegenFaithTimer", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type RegenFaithTimer = __Infer<typeof RegenFaithTimer>;
+
+export const Territory = __t.object("Territory", {
+  id: __t.u32(),
+  name: __t.string(),
+  ownerCivId: __t.i32(),
+  terrainType: __t.string(),
+  hasCapital: __t.bool(),
+  currentEvent: __t.string(),
+});
+export type Territory = __Infer<typeof Territory>;
+
+export const WorldMeta = __t.object("WorldMeta", {
+  id: __t.u32(),
+  currentYear: __t.u32(),
+  era: __t.u32(),
+  sessionId: __t.u32(),
+  tickCount: __t.u32(),
+  isRunning: __t.bool(),
+});
+export type WorldMeta = __Infer<typeof WorldMeta>;
+
+export const WorldTickTimer = __t.object("WorldTickTimer", {
+  scheduledId: __t.u64(),
+  scheduledAt: __t.scheduleAt(),
+});
+export type WorldTickTimer = __Infer<typeof WorldTickTimer>;
+
