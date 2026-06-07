@@ -21,7 +21,13 @@
       "Skill(find-skills)",
       "Skill(frontend-design)",
       "Bash(spacetime publish *)",
-      "Bash(spacetime call *)"
+      "Bash(spacetime call *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\shrey\\\\Desktop\\\\spacehack\\\\spacetime\\\\pantheon\" -Recurse -Directory)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\shrey\\\\Desktop\\\\spacehack\\\\spacetime\\\\pantheon\" -Force)",
+      "Bash(Select-Object Name, PSIsContainer)",
+      "Bash(Test-Path *)"
     ]
   }
 }
