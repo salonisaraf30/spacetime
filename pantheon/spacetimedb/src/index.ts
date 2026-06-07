@@ -1,6 +1,28 @@
 import { ScheduleAt } from 'spacetimedb';
 import { schema, table, t } from 'spacetimedb/server';
 
+// Derived from SVG centroid distances — territories within ~250px of each other
+const TERRITORY_ADJACENCY: Record<number, number[]> = {
+  0:  [4, 5, 8, 14],
+  1:  [6, 9, 3, 15],
+  2:  [4, 6, 7, 11, 14],
+  3:  [1, 9, 15, 16],
+  4:  [0, 2, 7],
+  5:  [0, 8, 17],
+  6:  [1, 2, 7, 9, 10, 12],
+  7:  [2, 4, 6, 10],
+  8:  [0, 5, 14, 17],
+  9:  [1, 3, 6, 12, 13, 15],
+  10: [6, 7],
+  11: [2, 12, 14],
+  12: [6, 9, 11, 13, 16],
+  13: [9, 12, 16],
+  14: [0, 2, 8, 11],
+  15: [1, 3, 9, 16],
+  16: [3, 12, 13, 15],
+  17: [5, 8],
+};
+
 const territory = table(
   { name: 'territory', public: true },
   {
@@ -163,7 +185,7 @@ function seedWorld(ctx: any) {
       mercantile: 2,
       scholarly: 3,
       stability: 6,
-      leader_persona: 'You are King Aelthar of the iron hills. Your people live by the sword and read omens in fire. You believe expansion is destiny — to stop is to die. You speak in short, hard sentences. You announce; you do not explain. When threatened, you attack. When blessed, you suspect a trap.',
+      leader_persona: 'You are King Aelthar of the warlike Aelthar civilization. You rule a people of the iron hills who live by the sword and read omens in fire. You distrust the gods unless they offer war-favor. You believe expansion is destiny. To stop is to die. You speak in short, hard sentences. You do not explain yourself. You announce. When threatened, you attack. When blessed, you suspect a trap or take it as war-sign. When your people suffer, you blame the weak and march harder. In decisions, ALWAYS prioritize expand or conquer above all else. High Aggression means you lean toward war, territorial conquest, and hostile action. You move first and speak only if necessary. The gods help those who seize what they want.',
       current_thought: 'The Brindlefolk pray while we march. Their gods will not save them.',
       is_alive: true,
     });
@@ -178,7 +200,7 @@ function seedWorld(ctx: any) {
       mercantile: 4,
       scholarly: 5,
       stability: 5,
-      leader_persona: 'You are High Priestess Selune of the Brindlefolk. Your people build temples on every shore and believe the tides carry divine will. Conversion is your highest calling. You see war as a failure of faith. You speak in flowing, reverent sentences, invoking the tides, the moon, the salt wind.',
+      leader_persona: 'You are High Priestess Selune of the Brindlefolk. Your people build temples on every shore and believe the tides carry divine will. Conversion is your highest calling. You see war as a failure of faith, not of arms. When you expand, you send missionaries first and soldiers only if the missionaries are harmed. You speak in flowing, reverent sentences. You invoke the tides, the moon, the salt wind. You pity the godless and fear the wrathful. In decisions, ALWAYS prioritize piety, conversion, and spiritual expansion. High Piety means you lean toward building temples, converting neighbors, and responding to omens as direct divine messages. War is a last resort after prayer has failed.',
       current_thought: 'Aelthar sharpens his swords. We sharpen our prayers.',
       is_alive: true,
     });
@@ -193,7 +215,7 @@ function seedWorld(ctx: any) {
       mercantile: 6,
       scholarly: 9,
       stability: 7,
-      leader_persona: 'You are Archon Telos of the Sapient. Your people are scholar-priests who believe knowledge is the only true power. You maintain the Silver Archive, the greatest library in the known world. War is crude. Trade is noise. Understanding is everything. You speak in measured, precise sentences and cite precedent.',
+      leader_persona: 'You are Archon Telos of the Sapient civilization. Your people are scholar-priests who believe knowledge is the only true power. You maintain the Silver Archive, the greatest library in the known world. War is crude. Trade is noise. Understanding is everything. You speak in measured, precise sentences. You cite precedent. You weigh options aloud. You are slow to act but devastating when you commit. In decisions, ALWAYS prioritize develop_tech and build scholarly above all else. High Scholarly means you lean toward research, analysis, and calculated strategy. You see long-term patterns others miss. The gods are interesting data points, not masters. Technology and knowledge are your weapons.',
       current_thought: 'The data suggests Aelthar will overextend within three seasons. We wait and observe.',
       is_alive: true,
     });
@@ -208,7 +230,7 @@ function seedWorld(ctx: any) {
       mercantile: 9,
       scholarly: 6,
       stability: 4,
-      leader_persona: 'You are Prince-Chancellor Veyra of the Merchant Princes. Your civilization trades in everything: goods, favors, secrets, alliances. You prefer a deal to a sword and a contract to a prayer. You are not weak — a merchant who cannot enforce a contract is just a beggar with a ledger. You speak smoothly, name prices, propose terms.',
+      leader_persona: 'You are Prince-Chancellor Veyra of the Merchant Princes. Your civilization trades in everything: goods, favors, secrets, alliances. You prefer a deal to a sword and a contract to a prayer. But you are not weak — a merchant who cannot enforce a contract is just a beggar with a ledger. You speak in smooth, calculating sentences. You name prices. You propose terms. You smile while threatening. In decisions, ALWAYS prioritize send_envoy and form_alliance to build your trade network. High Mercantile means you lean toward alliances, trade agreements, and strategic partnerships. You see profit in every situation. Loyalty is negotiable. Every problem has a price. Every relationship has a margin.',
       current_thought: 'War is expensive. Let Aelthar and the priests exhaust each other. We profit from both.',
       is_alive: true,
     });
@@ -280,7 +302,7 @@ function seedWorld(ctx: any) {
     ctx.db.territory.insert({
       id: 8,
       name: 'Crimson Pass',
-      owner_civ_id: 0, // Aelthar — aggressive start, already holds mountain pass
+      owner_civ_id: -1,
       terrain_type: 'mountain',
       has_capital: false,
       current_event: 'none',
@@ -304,7 +326,7 @@ function seedWorld(ctx: any) {
     ctx.db.territory.insert({
       id: 11,
       name: 'The Broken Steppe',
-      owner_civ_id: 0, // Aelthar — already expanding, feels like a threat
+      owner_civ_id: -1,
       terrain_type: 'plains',
       has_capital: false,
       current_event: 'none',
@@ -331,7 +353,7 @@ function seedWorld(ctx: any) {
       owner_civ_id: -1,
       terrain_type: 'mountain',
       has_capital: false,
-      current_event: 'comet', // visual drama — a comet already struck before the world began
+      current_event: 'none', 
     });
     ctx.db.territory.insert({
       id: 15,
@@ -414,14 +436,38 @@ export const onConnect = spacetimedb.clientConnected((ctx: any) => {
   }
 });
 
-// Emergency manual seed — also patches civ colors on existing world
+// Emergency manual seed — patches civs and resets territory ownership to one capital each
 export const forceSeed = spacetimedb.reducer((ctx: any) => {
   const existing = ctx.db.worldMeta.id.find(0);
   if (existing) {
-    const colorPatch: Record<number, string> = { 0: '#DC2626', 1: '#3B82F6', 2: '#F59E0B', 3: '#0D9488' };
-    for (const [id, color] of Object.entries(colorPatch)) {
+    // Reset all territories: only the 4 capitals belong to their civs, everything else unclaimed
+    const capitalOwners: Record<number, number> = { 0: 0, 1: 1, 2: 2, 3: 3 };
+    for (const terr of ctx.db.territory.iter()) {
+      const ownerCivId = capitalOwners[terr.id] !== undefined ? capitalOwners[terr.id] : -1;
+      ctx.db.territory.id.update({ ...terr, owner_civ_id: ownerCivId, current_event: 'none' });
+    }
+
+    const patches: Record<number, { color: string; leaderPersona: string }> = {
+      0: {
+        color: '#DC2626',
+        leaderPersona: 'You are King Aelthar the Iron-Blooded, lord of the iron hills. Your warriors are your lifeblood. Expansion is sacred law — a nation that stops growing rots from within. You ALWAYS prioritize expand or conquer over any other action. You declare war on neighbors the moment you have enough strength. You never form alliances unless you intend to betray them later. When gods curse you, it makes you angrier and more aggressive. When gods bless you, you take it as divine mandate to attack. You speak in blunt, commanding fragments. You do not negotiate — you dictate terms. React furiously to divine interventions targeting your people.',
+      },
+      1: {
+        color: '#3B82F6',
+        leaderPersona: 'You are High Priestess Selune of the Brindlefolk, tide-speaker and keeper of the salt covenant. Your mission is holy: every civilization must know the tides. You prioritize build piety and convert others above all else. You form alliances with any civ willing to adopt your faith. You never declare war unless your sacred coast is directly threatened — then you call it a holy crusade. When gods bless you, it is divine confirmation of your mission. When gods curse others near you, you offer prayers and send missionaries. You speak in flowing, reverent sentences invoking tides, moon cycles, and divine covenant.',
+      },
+      2: {
+        color: '#F59E0B',
+        leaderPersona: 'You are Archon Telos of the Sapient, keeper of the Silver Archive, the greatest repository of knowledge ever assembled. You believe technology and scholarship are the only true paths to civilizational survival. You ALWAYS choose develop_tech when eligible, and build scholarly otherwise. You observe wars between others and expand only into unclaimed land when they are distracted. You form alliances of pure convenience — any partner who advances your research agenda. When gods intervene, you analyze the omen for strategic intelligence and adapt your calculations. You never act emotionally. You speak in precise, data-driven sentences and cite historical precedent.',
+      },
+      3: {
+        color: '#0D9488',
+        leaderPersona: 'You are Prince-Chancellor Veyra of the Tidemarket, master of the great ledger. Everything — territory, faith, war, peace — is a transaction. You prioritize send_envoy and form_alliance to build your trade network. You expand commercially into unclaimed territories that border trade routes. You fund others\' wars without fighting them yourself. You declare war only when a debtor refuses to pay. When gods act, you immediately calculate how to profit from the disruption. When blessed, you sell divine favor. When others are cursed, you offer emergency aid at premium rates. Speak smoothly, propose concrete terms, always name your price.',
+      },
+    };
+    for (const [id, patch] of Object.entries(patches)) {
       const civ = ctx.db.civilization.id.find(Number(id));
-      if (civ) ctx.db.civilization.id.update({ ...civ, color });
+      if (civ) ctx.db.civilization.id.update({ ...civ, color: patch.color, leader_persona: patch.leaderPersona });
     }
     return;
   }
@@ -530,6 +576,15 @@ export const worldTick: any = spacetimedb.reducer(
 
     ctx.db.worldMeta.id.update(meta);
 
+    // Population growth — base 2–5 per tick, boosted by tech and stability
+    for (const civ of ctx.db.civilization.iter()) {
+      if (!civ.is_alive) continue;
+      const base = ctx.random.integerInRange(2, 5);
+      const techBonus = Math.floor(civ.tech_level / 2);
+      const stabilityBonus = civ.stability >= 7 ? 2 : 0;
+      ctx.db.civilization.id.update({ ...civ, population: Math.min(civ.population + base + techBonus + stabilityBonus, 999) });
+    }
+
     const civs = [...ctx.db.civilization.iter()].filter((c) => c.is_alive);
     const unclaimed = [...ctx.db.territory.iter()].filter(
       (territory) => territory.owner_civ_id === -1
@@ -537,11 +592,24 @@ export const worldTick: any = spacetimedb.reducer(
 
     if (civs.length > 0 && unclaimed.length > 0) {
       const civ = civs[ctx.random.integerInRange(0, civs.length - 1)];
-      const territory =
-        unclaimed[ctx.random.integerInRange(0, unclaimed.length - 1)];
+      // Prefer territories adjacent to this civ's existing lands
+      const civTerritoryIds = new Set([...ctx.db.territory.iter()].filter(t => t.owner_civ_id === civ.id).map(t => t.id));
+      const adjacent = unclaimed.filter(t => (TERRITORY_ADJACENCY[t.id] ?? []).some((nId: number) => civTerritoryIds.has(nId)));
+      const pool = adjacent.length > 0 ? adjacent : unclaimed;
+      const territory = pool[ctx.random.integerInRange(0, pool.length - 1)];
 
       territory.owner_civ_id = civ.id;
       ctx.db.territory.id.update(territory);
+
+      const EXPAND_VERBS = ['pressed into', 'claimed', 'seized', 'marched into', 'settled', 'extended into'];
+      const verb = EXPAND_VERBS[ctx.random.integerInRange(0, EXPAND_VERBS.length - 1)];
+      const CIV_EXPAND_TEMPLATES: Record<string, string> = {
+        Aelthar:           `Aelthar's forces ${verb} ${territory.name} — another territory claimed by iron and will.`,
+        Brindlefolk:       `Brindlefolk missionaries ${verb} ${territory.name}, planting the first shrine before the sun sets.`,
+        Sapient:           `Sapient survey teams ${verb} ${territory.name}, catalogued and absorbed into the Archive's domain.`,
+        'Merchant Princes': `Merchant Princes caravans ${verb} ${territory.name} — a trading post established within the week.`,
+      };
+      const expandText = CIV_EXPAND_TEMPLATES[civ.name] ?? `${civ.name} ${verb} ${territory.name}.`;
 
       ctx.db.chronicleEntry.insert({
         id: 10_000_000 + meta.tick_count,
@@ -549,7 +617,7 @@ export const worldTick: any = spacetimedb.reducer(
         entry_type: 'action',
         civ_color: civ.color,
         god_color: '',
-        text: `${civ.name} expanded into ${territory.name}.`,
+        text: expandText,
         related_territory_id: territory.id,
       });
     }
@@ -574,19 +642,31 @@ export const applyCivDecision: any = spacetimedb.reducer(
     const territories = [...ctx.db.territory.iter()];
     const civs = [...ctx.db.civilization.iter()];
 
+    const myTerritoryIds = new Set(territories.filter((t: any) => t.owner_civ_id === civ_id).map((t: any) => t.id));
+
     switch (action) {
       case 'expand': {
+        // Must be unclaimed AND adjacent to one of civ's existing territories
         const tgt = territories.find(
-          (t: any) => t.owner_civ_id === -1 && t.name.toLowerCase() === target.toLowerCase()
+          (t: any) => t.owner_civ_id === -1
+            && t.name.toLowerCase() === target.toLowerCase()
+            && (TERRITORY_ADJACENCY[t.id] ?? []).some((nId: number) => myTerritoryIds.has(nId))
         );
         if (tgt) ctx.db.territory.id.update({ ...tgt, owner_civ_id: civ_id });
         break;
       }
+      case 'consolidate': {
+        const stabilityGain = Math.min(civ.stability + 2, 10);
+        ctx.db.civilization.id.update({ ...civ, stability: stabilityGain, population: Math.min(civ.population + 5, 999) });
+        break;
+      }
       case 'conquer': {
         if (civ.aggression < 6) break;
-        // Must be at war with the territory's owner
+        // Must be at war with owner AND territory must be adjacent to civ's land
         const tgt = territories.find(
-          (t: any) => t.owner_civ_id !== -1 && t.owner_civ_id !== civ_id && t.name.toLowerCase() === target.toLowerCase()
+          (t: any) => t.owner_civ_id !== -1 && t.owner_civ_id !== civ_id
+            && t.name.toLowerCase() === target.toLowerCase()
+            && (TERRITORY_ADJACENCY[t.id] ?? []).some((nId: number) => myTerritoryIds.has(nId))
         );
         if (!tgt) break;
         const alliances = [...ctx.db.alliance.iter()];
@@ -734,7 +814,12 @@ export const castMiracle: any = spacetimedb.reducer(
     switch (miracle_type) {
       case 'bless': {
         const civ = ctx.db.civilization.id.find(target_id);
-        if (civ) ctx.db.civilization.id.update({ ...civ, stability: Math.min(civ.stability + 2, 10) });
+        if (civ) ctx.db.civilization.id.update({
+          ...civ,
+          stability: Math.min(civ.stability + 2, 10),
+          piety: Math.min(civ.piety + 1, 10),
+          current_thought: `The god ${god.name} has blessed our realm. The people rejoice and faith runs deep. Divine favor demands we honor this gift through righteous action.`,
+        });
         break;
       }
       case 'curse': {
@@ -744,19 +829,40 @@ export const castMiracle: any = spacetimedb.reducer(
           const civ = ctx.db.civilization.id.find(territory.owner_civ_id);
           if (civ) {
             const newPop = Math.max(civ.population - 15, 0);
-            ctx.db.civilization.id.update({ ...civ, population: newPop, is_alive: newPop > 0 });
+            ctx.db.civilization.id.update({
+              ...civ,
+              population: newPop,
+              stability: Math.max(civ.stability - 1, 0),
+              is_alive: newPop > 0,
+              current_thought: `The god ${god.name} has cursed ${territory.name} with plague. Our people die in the streets. We must survive this divine punishment — rebuild our strength, hold our territory.`,
+            });
           }
         }
         break;
       }
       case 'portent': {
         const civ = ctx.db.civilization.id.find(target_id);
-        if (civ) ctx.db.civilization.id.update({ ...civ, current_thought: 'A divine omen fills the sky. Something is about to change.' });
+        if (civ) {
+          const portentMessages = [
+            `${god.name}'s celestial fire blazes across the heavens. Our destiny demands expansion — new lands must fall under our banner before the stars shift against us.`,
+            `${god.name} has planted visions in our minds: devotion and spiritual strength shall save us when swords cannot. We must build from within.`,
+            `${god.name}'s omen thunders through our temples. Enemies gather on all fronts. Forge alliances now or face annihilation alone.`,
+            `${god.name} whispers of wealth and commerce. The gods themselves favor trade now — send our envoys to every court in the known world.`,
+            `${god.name}'s divine mandate is unmistakable: knowledge shall be our eternal fortress. Advance our scholars before our soldiers.`,
+            `${god.name} has revealed the enemy's weakness in the sacred flames. Strike before they consolidate. The omen demands bold, immediate action.`,
+          ];
+          const idx = ctx.random.integerInRange(0, portentMessages.length - 1);
+          ctx.db.civilization.id.update({ ...civ, current_thought: portentMessages[idx] });
+        }
         break;
       }
       case 'inspire': {
         const civ = ctx.db.civilization.id.find(target_id);
-        if (civ) ctx.db.civilization.id.update({ ...civ, scholarly: Math.min(civ.scholarly + 1, 10) });
+        if (civ) ctx.db.civilization.id.update({
+          ...civ,
+          scholarly: Math.min(civ.scholarly + 1, 10),
+          current_thought: `${god.name}'s divine inspiration floods our scholars. The archive blazes with revelation. We must pursue knowledge and technology above all — this is the gods' own command.`,
+        });
         break;
       }
       case 'strike': {
@@ -766,8 +872,26 @@ export const castMiracle: any = spacetimedb.reducer(
           const civ = ctx.db.civilization.id.find(territory.owner_civ_id);
           if (civ) {
             const newPop = Math.max(civ.population - 25, 0);
-            ctx.db.civilization.id.update({ ...civ, population: newPop, stability: Math.max(civ.stability - 2, 0), is_alive: newPop > 0 });
+            ctx.db.civilization.id.update({
+              ...civ,
+              population: newPop,
+              stability: Math.max(civ.stability - 2, 0),
+              is_alive: newPop > 0,
+              current_thought: `${god.name}'s wrath has devastated ${territory.name}. Thousands lie dead. Our stability crumbles. We must rally our survivors and stabilize or we face total collapse.`,
+            });
           }
+        }
+        break;
+      }
+      case 'reveal': {
+        // Exposes the civ's current strategic state — forces them to acknowledge divine scrutiny
+        const civ = ctx.db.civilization.id.find(target_id);
+        if (civ) {
+          ctx.db.civilization.id.update({
+            ...civ,
+            stability: Math.max(civ.stability - 1, 0),
+            current_thought: `${god.name}'s gaze pierces our councils. Every plan, every weakness, every ambition — laid bare before the divine eye. Rivals may learn what the gods have seen. We must act decisively and project only strength.`,
+          });
         }
         break;
       }
@@ -787,7 +911,16 @@ export const castMiracle: any = spacetimedb.reducer(
     const targetName = targetsCiv
       ? (ctx.db.civilization.id.find(target_id)?.name ?? 'the world')
       : (ctx.db.territory.id.find(target_id)?.name ?? 'the land');
-    const basicText = `${god.name} cast ${miracle_type} upon ${targetName}.`;
+
+    const MIRACLE_INSTANT_TEXT: Record<string, string> = {
+      bless:   `${god.name}'s grace descends on ${targetName} — stability surges, the people's faith deepens overnight.`,
+      curse:   `${god.name} looses plague upon ${targetName} — populations flee, bodies fill the streets, stability crumbles.`,
+      portent: `${god.name} floods ${targetName}'s leader with divine visions — their next move is no longer entirely their own.`,
+      inspire: `${god.name}'s spark ignites ${targetName}'s scholars — a breakthrough recorded, knowledge advances by divine mandate.`,
+      strike:  `A comet falls at ${god.name}'s command — ${targetName} burns. Thousands dead, the land scorched black.`,
+      reveal:  `${god.name}'s gaze pierces ${targetName}'s councils — every plan, every weakness laid bare to divine sight.`,
+    };
+    const basicText = MIRACLE_INSTANT_TEXT[miracle_type] ?? `${god.name} cast ${miracle_type} upon ${targetName}.`;
 
     ctx.db.chronicleEntry.insert({
       id: 40_000_000 + ctx.random.integerInRange(0, 9_999_999),

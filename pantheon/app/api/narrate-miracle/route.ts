@@ -1,30 +1,55 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { mergeCreate, extractText, logTokens } from "../../lib/merge-gateway";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const MIRACLE_FLAVOR: Record<string, string> = {
+  bless:   "stability +2 and piety +1 — the civilization grows more stable and their faith surges",
+  curse:   "plague erupts — population drops by 15, stability falls by 1, the territory is marked by pestilence",
+  portent: "a divine vision rewrites the leader's next decision — their course is now fated by divine will",
+  inspire: "scholarly advancement +1 — the civilization's scholars make an immediate breakthrough",
+  strike:  "a comet strikes — population falls by 25, stability drops by 2, the territory is scorched and burning",
+  reveal:  "the civilization's plans and current thoughts are exposed to divine sight — all secrets laid bare",
+};
 
 export async function POST(req: NextRequest) {
   try {
-    const { godName, miracleType, territoryName, civName } = await req.json();
+    const { godName, miracleType, territoryName, civName, mechEffect, targetCivPop, targetCivStability } = await req.json();
 
-    const prompt = `You are an ancient historian writing a chronicle of a fantasy world.
-Write ONE sentence (maximum 25 words) chronicling this divine event:
-The god "${godName}" cast "${miracleType}" upon ${territoryName ?? "the land"}${civName ? `, controlled by ${civName}` : ""}.
+    const target = civName ?? territoryName ?? "the land";
+    const effect = mechEffect ?? MIRACLE_FLAVOR[miracleType] ?? miracleType;
+    const stateContext = (targetCivPop != null || targetCivStability != null)
+      ? `Current state of ${target}: population ${targetCivPop ?? "unknown"}, stability ${targetCivStability ?? "unknown"}.`
+      : "";
 
-Write in the style of an illuminated manuscript. Be dramatic but concise.
-Use archaic language. Do not use modern words.
-Return ONLY the sentence, no quotes, no explanation.`;
+    const prompt = `You are the voice recording events in the living chronicle of a god-simulation world.
 
-    const message = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 80,
+A god just acted. Write 2 sentences for the chronicle.
+
+GOD: ${godName}
+MIRACLE: ${miracleType}
+TARGET: ${target}
+EFFECT: ${effect}
+${stateContext}
+
+Rules:
+- Sentence 1: What happened — name ${godName} and ${target} explicitly, describe the physical effect in concrete terms
+- Sentence 2: The immediate strategic consequence — what does this mean for ${target} or their rivals
+- Use present-tense ("crashes down", "spreads through", not "crashed down")
+- Be specific and vivid — no vague phrases like "divine favor shines" or "the heavens speak"
+- Write as if reporting a real event with real consequences
+- Max 50 words
+
+Return ONLY the 2 sentences, nothing else.`;
+
+    const response = await mergeCreate({
       messages: [{ role: "user", content: prompt }],
+      max_tokens: 120,
     });
 
+    logTokens("narrate-miracle", response);
+
     const narration =
-      message.content[0].type === "text"
-        ? message.content[0].text.trim()
-        : `The god ${godName} cast ${miracleType} upon the world.`;
+      extractText(response) ??
+      `${godName}'s ${miracleType} falls upon ${target} — the world shifts in its wake.`;
 
     return NextResponse.json({ narration });
   } catch (err) {
