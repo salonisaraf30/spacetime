@@ -1,28 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useTable, useSpacetimeDB } from "spacetimedb/react";
 import { DbConnection, tables } from "../../src/module_bindings";
 
-const DIRECTIVES = [
-  "Cause a Dark Age. No civilization may rise above Tech Level 4 by era's end.",
-  "The Pious Triumph. Brindlefolk must control the most territory when the era closes.",
-  "The Sword Wins. The most aggressive civilization must hold the most land.",
-  "A New Religion. At least two civilizations must reach piety 7 or higher.",
-  "Twin Empires. Two civilizations must each hold 6 or more territories.",
-  "The Old Gods Are Forgotten. Total piety across all civilizations must fall below 15.",
-  "Burn It Down. At least one civilization must go extinct before the era ends.",
-  "Peace Reigns. No active wars may remain when the era closes.",
-];
+const HOST = process.env.NEXT_PUBLIC_SPACETIMEDB_HOST ?? "wss://maincloud.spacetimedb.com";
+const DB_NAME = process.env.NEXT_PUBLIC_SPACETIMEDB_DB_NAME ?? "nextjs-ts";
+const TOKEN_KEY = `${HOST}/${DB_NAME}/auth_token`;
 
-type Screen = "splash" | "name" | "directive";
+import { DIRECTIVES, DIRECTIVE_TITLES } from "../constants/directives";
+
+type Screen = "splash" | "choice" | "name" | "directive";
 
 export default function JoinPage() {
   const [screen, setScreen] = useState<Screen>("splash");
   const [godName, setGodName] = useState("");
-  const [directive, setDirective] = useState("");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
+  const [existingGod, setExistingGod] = useState<{ name: string; color: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { isActive: connected, getConnection, identity: myIdentity } = useSpacetimeDB();
@@ -30,29 +25,39 @@ export default function JoinPage() {
   const subscribedRef = useRef(false);
   const [gods] = useTable(tables.god);
 
-  // Keep a ref to gods so interval callbacks see the latest value
-  const godsRef = useRef(gods);
-  useEffect(() => { godsRef.current = gods; }, [gods]);
-
-  const myIdentityRef = useRef(myIdentity);
-  useEffect(() => { myIdentityRef.current = myIdentity; }, [myIdentity]);
-
   useEffect(() => {
     if (!conn || !connected || subscribedRef.current) return;
     subscribedRef.current = true;
     conn.subscriptionBuilder().subscribe(["SELECT * FROM god"]);
   }, [conn, connected]);
 
-  // If already joined, go straight to god-panel
+  // Detect existing god → show choice screen instead of auto-redirecting
   useEffect(() => {
-    if (!myIdentity || !connected) return;
-    const existing = gods.find(g => g.identity.toHexString() === myIdentity.toHexString());
-    if (existing) window.location.href = "/god-panel";
+    if (!myIdentity || !connected || screen !== "splash") return;
+    const found = gods.find(g => g.identity.toHexString() === myIdentity.toHexString());
+    if (found) {
+      setExistingGod({ name: found.name, color: found.color });
+      setScreen("choice");
+    }
   }, [gods, myIdentity, connected]);
 
   useEffect(() => {
     if (screen === "name") inputRef.current?.focus();
   }, [screen]);
+
+  function handleContinue() {
+    window.location.href = "/god-panel";
+  }
+
+  function handleNewGod() {
+    // Clear identity so SpacetimeDB assigns a fresh one on next connect
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem("pantheon-god");
+    }
+    setExistingGod(null);
+    setScreen("name");
+  }
 
   function handleJoin() {
     if (!godName.trim() || !conn || joining) return;
@@ -60,15 +65,14 @@ export default function JoinPage() {
     setError("");
     try {
       conn.reducers.joinWorld({ godName: godName.trim() });
-      // Save to localStorage so god-panel can render immediately without subscription
-      const colors = ['#F59E0B','#10B981','#EC4899','#8B5CF6','#EF4444','#06B6D4','#F97316','#14B8A6'];
+      const colors = ["#F59E0B", "#10B981", "#EC4899", "#8B5CF6", "#EF4444", "#06B6D4", "#F97316", "#14B8A6"];
       const di = Math.floor(Math.random() * 8);
-      localStorage.setItem('pantheon-god', JSON.stringify({
+      localStorage.setItem("pantheon-god", JSON.stringify({
         name: godName.trim(),
         directiveIndex: di,
         color: colors[di % colors.length],
       }));
-    } catch (e) {
+    } catch {
       setError("Failed to join. Try again.");
       setJoining(false);
       return;
@@ -86,6 +90,30 @@ export default function JoinPage() {
             You are a god.<br />The civilizations below live and breathe.<br />Shape their fate.
           </p>
           <button style={styles.btn} onClick={() => setScreen("name")}>ENTER</button>
+        </div>
+      )}
+
+      {screen === "choice" && existingGod && (
+        <div style={styles.center}>
+          <p style={styles.eyebrow}>You have walked this world before</p>
+          <div style={styles.godCard}>
+            <div style={{ ...styles.godOrb, background: existingGod.color }} />
+            <span style={styles.godCardName}>{existingGod.name}</span>
+          </div>
+          <p style={{ ...styles.subtitle, marginBottom: "2rem" }}>
+            Continue as this god, or awaken anew?
+          </p>
+          <div style={styles.choiceRow}>
+            <button style={styles.btn} onClick={handleContinue}>
+              CONTINUE
+            </button>
+            <button style={{ ...styles.btn, ...styles.btnGhost }} onClick={handleNewGod}>
+              NEW GOD
+            </button>
+          </div>
+          <p style={{ ...styles.hint, marginTop: "1.25rem" }}>
+            Creating a new god removes your old identity from this device.
+          </p>
         </div>
       )}
 
@@ -121,11 +149,11 @@ export default function JoinPage() {
           <p style={{ ...styles.eyebrow, color: "#ef4444", letterSpacing: "0.25em" }}>
             Your Secret Directive
           </p>
-          <p style={styles.directiveText}>{directive}</p>
+          <p style={styles.directiveText}>{DIRECTIVES[0]}</p>
           <p style={{ ...styles.hint, color: "#ef444466", marginBottom: "2rem" }}>
-            Do not share this with other gods.
+            Do not share this with other gods. Your true directive awaits inside.
           </p>
-          <button style={styles.btn} onClick={() => window.location.href = "/god-panel"}>
+          <button style={styles.btn} onClick={() => window.location.href = "/god-panel?new=1"}>
             BEGIN
           </button>
         </div>
@@ -134,7 +162,7 @@ export default function JoinPage() {
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+const styles: Record<string, CSSProperties> = {
   root: {
     minHeight: "100vh",
     background: "#0d0a07",
@@ -173,17 +201,45 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#a89880",
     marginBottom: "2rem",
   },
+  godCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.75rem",
+    padding: "0.75rem 1.5rem",
+    border: "1px solid rgba(146,64,14,0.4)",
+    borderRadius: "0.5rem",
+    background: "rgba(146,64,14,0.06)",
+    marginBottom: "1.25rem",
+  },
+  godOrb: {
+    width: "1.1rem",
+    height: "1.1rem",
+    borderRadius: "50%",
+    flexShrink: 0,
+  },
+  godCardName: {
+    fontSize: "1.2rem",
+    color: "#f5e6c8",
+    letterSpacing: "0.05em",
+  },
+  choiceRow: {
+    display: "flex",
+    gap: "0.75rem",
+  },
   btn: {
-    padding: "0.75rem 2.5rem",
+    padding: "0.75rem 2rem",
     border: "1px solid #92400e",
     background: "transparent",
     color: "#f5e6c8",
     fontSize: "0.85rem",
     letterSpacing: "0.15em",
     cursor: "pointer",
-    marginTop: "1.5rem",
     fontFamily: "Georgia, serif",
     transition: "background 0.2s",
+  },
+  btnGhost: {
+    borderColor: "#3a2a1a",
+    color: "#6b5a47",
   },
   label: {
     fontSize: "1.1rem",

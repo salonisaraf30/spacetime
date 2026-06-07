@@ -1,28 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo, type CSSProperties } from "react";
 import { useTable, useSpacetimeDB } from "spacetimedb/react";
 import { DbConnection, tables } from "../../src/module_bindings";
 
 const MIRACLES = [
-  { type: "bless",   name: "Bless",   cost: 10, icon: "✦", desc: "+2 stability", targetsCiv: true },
-  { type: "inspire", name: "Inspire", cost: 10, icon: "☀", desc: "+1 scholarly", targetsCiv: true },
-  { type: "portent", name: "Portent", cost: 15, icon: "◎", desc: "Bias next decision", targetsCiv: true },
-  { type: "curse",   name: "Curse",   cost: 20, icon: "☠", desc: "-15 pop, plague", targetsCiv: false },
-  { type: "strike",  name: "Strike",  cost: 50, icon: "⚡", desc: "Devastate territory", targetsCiv: false },
+  { type: "bless",   name: "Bless",   cost: 12, icon: "✦", desc: "+2 stability", targetsCiv: true },
+  { type: "inspire", name: "Inspire", cost: 12, icon: "☀", desc: "+1 scholarly", targetsCiv: true },
+  { type: "portent", name: "Portent", cost: 18, icon: "◎", desc: "Bias next decision", targetsCiv: true },
+  { type: "curse",   name: "Curse",   cost: 25, icon: "☠", desc: "-15 pop, plague", targetsCiv: false },
+  { type: "strike",  name: "Strike",  cost: 55, icon: "⚡", desc: "Devastate territory", targetsCiv: false },
   { type: "reveal",  name: "Reveal",  cost: 5,  icon: "◈", desc: "See hidden state", targetsCiv: true },
 ];
 
-const DIRECTIVES = [
-  "Cause a Dark Age. No civ above Tech 4.",
-  "The Pious Triumph. Brindlefolk hold the most territory.",
-  "The Sword Wins. Most aggressive civ holds the most land.",
-  "A New Religion. Two civs reach piety 7+.",
-  "Twin Empires. Two civs hold 6+ territories each.",
-  "The Old Gods Are Forgotten. Total piety drops below 15.",
-  "Burn It Down. At least one civ goes extinct.",
-  "Peace Reigns. No active wars at era end.",
-];
+import { DIRECTIVES, DIRECTIVE_TITLES } from "../constants/directives";
 
 export default function GodPanel() {
   const { isActive: connected, getConnection, identity: myIdentity } = useSpacetimeDB();
@@ -32,6 +23,8 @@ export default function GodPanel() {
   const [gods] = useTable(tables.god);
   const [civs] = useTable(tables.civilization);
   const [territories] = useTable(tables.territory);
+  const [alliances] = useTable(tables.alliance);
+  const [worldMeta] = useTable(tables.worldMeta);
 
   useEffect(() => {
     if (!conn || !connected || subscribedRef.current) return;
@@ -40,6 +33,8 @@ export default function GodPanel() {
       "SELECT * FROM god",
       "SELECT * FROM civilization",
       "SELECT * FROM territory",
+      "SELECT * FROM alliance",
+      "SELECT * FROM world_meta",
     ]);
   }, [conn, connected]);
 
@@ -65,6 +60,8 @@ export default function GodPanel() {
   const [casting, setCasting] = useState(false);
   const [lastCast, setLastCast] = useState("");
   const [showDirective, setShowDirective] = useState(false);
+  const [eraNotice, setEraNotice] = useState<{ era: number; won: boolean } | null>(null);
+  const prevEraRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -72,6 +69,20 @@ export default function GodPanel() {
       if (isNew) setShowDirective(true);
     }
   }, []);
+
+  const world = worldMeta[0];
+
+  // Detect era change and score personal directive
+  useEffect(() => {
+    if (!world || !myGodFromDB) return;
+    if (prevEraRef.current !== null && world.era > prevEraRef.current) {
+      const won = scoreDirective(myGodFromDB.secretDirective, civs, territories, alliances).passing;
+      setEraNotice({ era: prevEraRef.current, won });
+      const t = setTimeout(() => setEraNotice(null), 15000);
+      return () => clearTimeout(t);
+    }
+    prevEraRef.current = world.era;
+  }, [world?.era]);
 
   // Only redirect if no localStorage data AND no DB data AND connected
   useEffect(() => {
@@ -130,18 +141,47 @@ export default function GodPanel() {
 
   return (
     <div style={styles.root}>
-      {showDirective && hasGod && (
+      {/* Era result notification */}
+      {eraNotice && (
         <div style={styles.overlay}>
-          <p style={{ fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.25em", color: "#ef4444", marginBottom: "1rem" }}>
-            Your Secret Directive
+          <p style={{ fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.25em", color: "#92400e", marginBottom: "0.75rem" }}>
+            Era {eraNotice.era} Ends
           </p>
-          <p style={{ fontSize: "1.05rem", fontStyle: "italic", lineHeight: 1.7, color: "#f5e6c8", marginBottom: "2rem" }}>
+          <div style={{
+            fontSize: "3rem",
+            marginBottom: "1rem",
+            color: eraNotice.won ? "#7ef0a9" : "#ef4444",
+          }}>
+            {eraNotice.won ? "✓" : "✗"}
+          </div>
+          <p style={{ fontSize: "1.3rem", color: "#f5e6c8", marginBottom: "0.75rem", letterSpacing: "0.05em" }}>
+            {eraNotice.won ? "Directive Fulfilled" : "Directive Failed"}
+          </p>
+          <p style={{ fontSize: "0.85rem", fontStyle: "italic", lineHeight: 1.6, color: "#a89880", marginBottom: "0.5rem", maxWidth: "18rem", textAlign: "center" }}>
             {directive}
           </p>
-          <p style={{ fontSize: "0.7rem", color: "#6b5a47", marginBottom: "2rem", fontStyle: "italic" }}>
+          <p style={{ fontSize: "0.68rem", color: "#6b5a47", marginBottom: "2rem", fontStyle: "italic" }}>
+            Era {eraNotice.era + 1} begins now.
+          </p>
+          <button style={styles.btn} onClick={() => setEraNotice(null)}>CONTINUE</button>
+        </div>
+      )}
+
+      {showDirective && hasGod && (
+        <div style={styles.overlay}>
+          <p style={{ fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.25em", color: "#ef4444", marginBottom: "0.5rem" }}>
+            Your Secret Directive
+          </p>
+          <p style={{ fontSize: "1.3rem", color: "#f5e6c8", marginBottom: "1.25rem", letterSpacing: "0.05em" }}>
+            {DIRECTIVE_TITLES[godDirective] ?? "Unknown Purpose"}
+          </p>
+          <p style={{ fontSize: "0.9rem", fontStyle: "italic", lineHeight: 1.7, color: "#a89880", marginBottom: "2rem", maxWidth: "18rem", textAlign: "center" }}>
+            {directive}
+          </p>
+          <p style={{ fontSize: "0.65rem", color: "#4a3a28", marginBottom: "2rem", fontStyle: "italic" }}>
             Do not share this with other gods.
           </p>
-          <button style={styles.btn} onClick={() => setShowDirective(false)}>BEGIN</button>
+          <button style={styles.btn} onClick={() => setShowDirective(false)}>I UNDERSTAND</button>
         </div>
       )}
       {/* Identity */}
@@ -214,18 +254,120 @@ export default function GodPanel() {
         <p style={styles.feedback}>✦ {lastCast}</p>
       )}
 
-      {/* Secret directive */}
-      <div style={styles.directiveBox}>
-        <p style={styles.directiveLabel}>Secret Directive</p>
-        <p style={styles.directiveText}>{directive}</p>
-      </div>
+      {/* Secret directive with live progress */}
+      <DirectiveStatus
+        directiveIndex={godDirective}
+        civs={civs}
+        territories={territories}
+        alliances={alliances}
+      />
     </div>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
+function scoreDirective(
+  directiveIndex: number,
+  civs: readonly any[],
+  territories: readonly any[],
+  alliances: readonly any[]
+): { passing: boolean; detail: string } {
+  const alive = civs.filter(c => c.isAlive);
+
+  switch (directiveIndex) {
+    case 0: { // Dark Age — no civ above Tech 4
+      const maxTech = alive.reduce((m, c) => Math.max(m, c.techLevel), 0);
+      return { passing: maxTech <= 4, detail: `Max tech: ${maxTech} · need ≤ 4` };
+    }
+    case 1: { // Pious Triumph — Brindlefolk controls most territory
+      const brindleId = civs.find(c => c.name === "Brindlefolk")?.id ?? 1;
+      const myCount = territories.filter(t => t.ownerCivId === brindleId).length;
+      const maxOther = alive
+        .filter(c => c.id !== brindleId)
+        .reduce((m, c) => Math.max(m, territories.filter(t => t.ownerCivId === c.id).length), 0);
+      return { passing: myCount > maxOther, detail: `Brindlefolk: ${myCount} · Others max: ${maxOther}` };
+    }
+    case 2: { // Sword Wins — most aggressive civ has most territory
+      const top = [...alive].sort((a, b) => b.aggression - a.aggression)[0];
+      if (!top) return { passing: false, detail: "No civs" };
+      const topCount = territories.filter(t => t.ownerCivId === top.id).length;
+      const maxOther = alive
+        .filter(c => c.id !== top.id)
+        .reduce((m, c) => Math.max(m, territories.filter(t => t.ownerCivId === c.id).length), 0);
+      return { passing: topCount > maxOther, detail: `${top.name} (Agg ${top.aggression}): ${topCount} · Others: ${maxOther}` };
+    }
+    case 3: { // New Religion — 2+ civs at piety ≥ 7
+      const pious = alive.filter(c => c.piety >= 7);
+      return { passing: pious.length >= 2, detail: `${pious.length}/2 civs at piety ≥ 7${pious.length ? ` · ${pious.map((c: any) => c.name).join(", ")}` : ""}` };
+    }
+    case 4: { // Twin Empires — 2 civs with 6+ territories
+      const big = alive.filter(c => territories.filter(t => t.ownerCivId === c.id).length >= 6);
+      return { passing: big.length >= 2, detail: `${big.length}/2 empires with 6+ territories${big.length ? ` · ${big.map((c: any) => `${c.name} (${territories.filter((t: any) => t.ownerCivId === c.id).length})`).join(", ")}` : ""}` };
+    }
+    case 5: { // Old Gods Forgotten — total piety < 15
+      const total = alive.reduce((s, c) => s + c.piety, 0);
+      return { passing: total < 15, detail: `Total piety: ${total} · need < 15` };
+    }
+    case 6: { // Burn It Down — 1+ civ extinct
+      const dead = civs.filter(c => !c.isAlive);
+      return { passing: dead.length >= 1, detail: dead.length > 0 ? `Extinct: ${dead.map((c: any) => c.name).join(", ")}` : "All civs still alive" };
+    }
+    case 7: { // Peace Reigns — no active wars
+      const wars = alliances.filter(a => a.status === "war");
+      return { passing: wars.length === 0, detail: wars.length === 0 ? "No active wars" : `${wars.length} active war${wars.length > 1 ? "s" : ""}` };
+    }
+    default:
+      return { passing: false, detail: "" };
+  }
+}
+
+function DirectiveStatus({ directiveIndex, civs, territories, alliances }: {
+  directiveIndex: number;
+  civs: readonly any[];
+  territories: readonly any[];
+  alliances: readonly any[];
+}) {
+  const text = DIRECTIVES[directiveIndex] ?? "";
+  const { passing, detail } = scoreDirective(directiveIndex, civs, territories, alliances);
+
+  return (
+    <div style={{
+      marginTop: "auto",
+      padding: "0.85rem",
+      border: `1px solid ${passing ? "rgba(126,240,169,0.25)" : "rgba(239,68,68,0.2)"}`,
+      borderRadius: "0.6rem",
+      background: passing ? "rgba(126,240,169,0.04)" : "rgba(239,68,68,0.04)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+        <p style={{ fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.15em", color: "#6b5a47", margin: 0 }}>
+          Secret Directive
+        </p>
+        <span style={{
+          fontSize: "0.62rem",
+          fontWeight: "bold",
+          padding: "0.15rem 0.5rem",
+          borderRadius: "999px",
+          background: passing ? "rgba(126,240,169,0.15)" : "rgba(239,68,68,0.15)",
+          color: passing ? "#7ef0a9" : "#ef4444",
+          letterSpacing: "0.08em",
+        }}>
+          {passing ? "✓ PASSING" : "✗ NOT MET"}
+        </span>
+      </div>
+      <p style={{ fontSize: "0.85rem", fontStyle: "italic", lineHeight: 1.5, margin: "0 0 0.5rem", color: "#d4c5a9" }}>
+        {text}
+      </p>
+      <p style={{ fontSize: "0.68rem", color: "#8a7a68", margin: 0, lineHeight: 1.4 }}>
+        {detail}
+      </p>
+    </div>
+  );
+}
+
+const styles: Record<string, CSSProperties> = {
   root: {
-    minHeight: "100vh",
+    position: "fixed",
+    inset: 0,
+    overflowY: "auto",
     background: "#0d0a07",
     color: "#d4c5a9",
     fontFamily: "Georgia, 'Times New Roman', serif",
@@ -315,15 +457,6 @@ const styles: Record<string, React.CSSProperties> = {
     fontStyle: "italic",
     margin: 0,
   },
-  directiveBox: {
-    marginTop: "auto",
-    padding: "0.75rem",
-    border: "1px solid #2a1f14",
-    borderRadius: "0.6rem",
-    background: "#1a1208",
-  },
-  directiveLabel: { fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.12em", color: "#6b5a47", margin: "0 0 0.4rem" },
-  directiveText: { fontSize: "0.82rem", fontStyle: "italic", lineHeight: 1.5, margin: 0, color: "#a89880" },
   overlay: {
     position: "fixed" as const,
     inset: 0,

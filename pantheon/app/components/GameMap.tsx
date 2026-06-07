@@ -17,11 +17,12 @@ interface GameMapProps {
 }
 
 export function GameMap({ onTerritoryClick }: GameMapProps) {
-  const [territories, territoriesLoading] = useTable(tables.territory);
+  const [territories] = useTable(tables.territory);
   const [civilizations] = useTable(tables.civilization);
   const [worldMeta] = useTable(tables.worldMeta);
   const [alliances] = useTable(tables.alliance);
   const [miracleCasts] = useTable(tables.miracleCast);
+  const [gods] = useTable(tables.god);
   const world = worldMeta[0];
 
   const MAP_W = 1380;
@@ -49,7 +50,10 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
   };
 
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const [view, setView] = useState(getFitView);
+  const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+
+  // Set real fit view after mount (getFitView needs window, can't run on server)
+  useEffect(() => { setView(getFitView()); }, []);
   const dragRef = useRef<{
     active: boolean;
     pointerId: number | null;
@@ -62,6 +66,7 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
   const { isActive: connected, getConnection } = useSpacetimeDB();
   const conn = getConnection() as DbConnection | null;
   const subscribedRef = useRef(false);
+  const aiTickInProgressRef = useRef(false);
 
   useEffect(() => {
     if (!conn || !connected || subscribedRef.current) return;
@@ -73,6 +78,8 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
         'SELECT * FROM world_meta',
         'SELECT * FROM alliance',
         'SELECT * FROM miracle_cast',
+        'SELECT * FROM chronicle_entry',
+        'SELECT * FROM god',
       ]);
   }, [conn, connected]);
 
@@ -84,15 +91,58 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
     return map;
   }, [civilizations]);
 
+  // Flash map: territoryId → flash color, cleared after animation
+  const [flashMap, setFlashMap] = useState<Record<number, string>>({});
+  const prevMiracleCountRef = useRef(0);
+
   useEffect(() => {
-    if (!world || !connected || !conn) return;
+    if (miracleCasts.length <= prevMiracleCountRef.current) return;
+    prevMiracleCountRef.current = miracleCasts.length;
+
+    const sorted = [...miracleCasts].sort((a, b) => b.id - a.id);
+    const latest = sorted[0];
+    if (!latest) return;
+
+    const CIV_MIRACLES = ['bless', 'portent', 'inspire', 'reveal'];
+    const targetsCiv = CIV_MIRACLES.includes(latest.miracleType);
+
+    const affectedIds: number[] = targetsCiv
+      ? territories.filter(t => t.ownerCivId === latest.targetId).map(t => t.id)
+      : [latest.targetId];
+
+    const color =
+      latest.miracleType === 'curse'  ? '#ff1111' :
+      latest.miracleType === 'strike' ? '#ff6600' :
+      latest.miracleType === 'bless'  ? '#ffd700' :
+      latest.miracleType === 'inspire'? '#00cfff' :
+      latest.miracleType === 'portent'? '#cc88ff' :
+      '#ffffff';
+
+    setFlashMap(prev => {
+      const next = { ...prev };
+      for (const id of affectedIds) next[id] = color;
+      return next;
+    });
+
+    setTimeout(() => {
+      setFlashMap(prev => {
+        const next = { ...prev };
+        for (const id of affectedIds) delete next[id];
+        return next;
+      });
+    }, 2200);
+  }, [miracleCasts.length]);
+
+  useEffect(() => {
+    if (!world || !connected || !conn || aiTickInProgressRef.current) return;
+    aiTickInProgressRef.current = true;
     const recentMiracles = miracleCasts.filter(
       (m) => m.tickNumber >= world.tickCount - 3
     );
     fetch("/api/ai-tick", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ civs: civilizations, territories, alliances, worldMeta: world, recentMiracles }),
+      body: JSON.stringify({ civs: civilizations, territories, alliances, worldMeta: world, recentMiracles, gods: gods.map(g => ({ id: g.id, name: g.name, color: g.color })) }),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -107,7 +157,8 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
           });
         }
       })
-      .catch(console.error);
+      .catch(console.error)
+      .finally(() => { aiTickInProgressRef.current = false; });
   }, [world?.tickCount]);
 
   useEffect(() => {
@@ -162,6 +213,27 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
     });
   };
 
+  // Build territory counts per civ
+  const terrCountByCiv = useMemo(() => {
+    const map: Record<number, number> = {};
+    for (const t of territories) {
+      if (t.ownerCivId >= 0) map[t.ownerCivId] = (map[t.ownerCivId] ?? 0) + 1;
+    }
+    return map;
+  }, [territories]);
+
+  // Build territory name lists per civ
+  const terrNamesByCiv = useMemo(() => {
+    const map: Record<number, string[]> = {};
+    for (const t of territories) {
+      if (t.ownerCivId >= 0) {
+        if (!map[t.ownerCivId]) map[t.ownerCivId] = [];
+        map[t.ownerCivId].push(t.name);
+      }
+    }
+    return map;
+  }, [territories]);
+
   return (
     <main className="map-app">
       <div className="hud hud-left">
@@ -186,6 +258,68 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
           <strong>{world?.currentYear ?? 1}</strong>
         </div>
       </div>
+
+      {/* Bottom-left: civ stats + territory legend */}
+      {civilizations.length > 0 && (
+        <div style={civPanelStyle}>
+          <div style={civPanelHeader}>Civilizations</div>
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr style={{ color: "#6b5a47", fontSize: "0.55rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                <th style={{ ...th, textAlign: "left" }}>Civ</th>
+                <th style={th}>Pop</th>
+                <th style={th}>Tech</th>
+                <th style={th}>Agg</th>
+                <th style={th}>Pie</th>
+                <th style={th}>Terr</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[...civilizations].sort((a, b) => a.id - b.id).map(civ => {
+                const terrCount = terrCountByCiv[civ.id] ?? 0;
+                const terrNames = terrNamesByCiv[civ.id] ?? [];
+                return (
+                  <tr key={civ.id} title={terrNames.join(", ")} style={{ opacity: civ.isAlive ? 1 : 0.4, cursor: "default" }}>
+                    <td style={{ ...td, textAlign: "left" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        <div style={{ width: "0.55rem", height: "0.55rem", borderRadius: "50%", background: civ.color, flexShrink: 0 }} />
+                        <span style={{ color: "#d4c5a9", fontWeight: "bold", fontSize: "0.68rem" }}>{civ.name}</span>
+                      </div>
+                    </td>
+                    <td style={td}>{civ.population}</td>
+                    <td style={td}>{civ.techLevel}</td>
+                    <td style={td}>{civ.aggression}</td>
+                    <td style={td}>{civ.piety}</td>
+                    <td style={{ ...td, color: civ.color, fontWeight: "bold" }}>{terrCount}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Territory → Civ legend */}
+          <div style={legendDivider} />
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem", maxHeight: "140px", overflowY: "auto" }}>
+            {territories
+              .filter(t => t.ownerCivId >= 0)
+              .sort((a, b) => a.ownerCivId - b.ownerCivId)
+              .map(t => {
+                const civ = civilizations.find(c => c.id === t.ownerCivId);
+                return (
+                  <div key={t.id} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <div style={{ width: "0.45rem", height: "0.45rem", borderRadius: "50%", background: civ?.color ?? "#888", flexShrink: 0 }} />
+                    <span style={{ fontSize: "0.62rem", color: "#a89880" }}>{t.name}</span>
+                    {t.currentEvent !== "none" && (
+                      <span style={{ fontSize: "0.55rem", color: t.currentEvent === "plague" ? "#7f0000" : "#ff6600" }}>
+                        {t.currentEvent === "plague" ? "☠" : "☄"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      )}
 
       <div
         ref={stageRef}
@@ -215,11 +349,24 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
             preserveAspectRatio="xMidYMid meet"
             style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", pointerEvents: "all" }}
           >
+            <defs>
+              <style>{`
+                @keyframes miracleFlash {
+                  0%   { opacity: 0.85; }
+                  30%  { opacity: 0.95; }
+                  100% { opacity: 0; }
+                }
+                @keyframes miraclePulse {
+                  0%, 100% { opacity: 0.15; }
+                  50%       { opacity: 0.55; }
+                }
+              `}</style>
+            </defs>
             {/* DEBUG: static borders — visible even when DB is empty */}
             {Object.entries(TERRITORY_PATHS).map(([id, d]) => (
               <path key={`debug-${id}`} d={d} fill="none" stroke="red" strokeWidth="2" />
             ))}
-            {!territoriesLoading && territories.map(territory => {
+            {territories.map(territory => {
               const pathId = TERRITORY_TO_PATH[territory.id];
               if (!pathId || !TERRITORY_PATHS[pathId]) return null;
 
@@ -247,10 +394,26 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
                       stroke={eventColor}
                       strokeWidth="2"
                       strokeOpacity={0.5}
-                      style={{ pointerEvents: "none", animation: "pulse 2s infinite" }}
+                      style={{ pointerEvents: "none", animation: "miraclePulse 2s infinite" }}
                     />
                   )}
                 </g>
+              );
+            })}
+
+            {/* Miracle flash layer — top of stack, fades out */}
+            {Object.entries(flashMap).map(([idStr, color]) => {
+              const pathId = TERRITORY_TO_PATH[Number(idStr)];
+              if (!pathId || !TERRITORY_PATHS[pathId]) return null;
+              return (
+                <path
+                  key={`flash-${idStr}`}
+                  d={TERRITORY_PATHS[pathId]}
+                  fill={color}
+                  stroke={color}
+                  strokeWidth="3"
+                  style={{ pointerEvents: "none", animation: "miracleFlash 2.2s ease-out forwards" }}
+                />
               );
             })}
           </svg>
@@ -259,3 +422,48 @@ export function GameMap({ onTerritoryClick }: GameMapProps) {
     </main>
   );
 }
+
+const civPanelStyle = {
+  position: "absolute" as const,
+  top: "11rem",
+  right: "1rem",
+  zIndex: 3,
+  pointerEvents: "auto" as const,
+  background: "rgba(7, 4, 1, 0.82)",
+  backdropFilter: "blur(10px)",
+  border: "1px solid rgba(146,64,14,0.3)",
+  borderRadius: "0.6rem",
+  padding: "0.6rem 0.75rem",
+  width: "min(22rem, calc(100vw - 2rem))",
+  maxHeight: "calc(100vh - 14rem)",
+  overflowY: "auto" as const,
+  fontFamily: "Georgia, 'Times New Roman', serif",
+  color: "#a89880",
+};
+
+const civPanelHeader = {
+  fontSize: "0.58rem",
+  textTransform: "uppercase" as const,
+  letterSpacing: "0.18em",
+  color: "#92400e",
+  marginBottom: "0.45rem",
+};
+
+const legendDivider = {
+  height: "1px",
+  background: "rgba(146,64,14,0.2)",
+  margin: "0.45rem 0",
+};
+
+const th = {
+  textAlign: "right" as const,
+  padding: "0.15rem 0.4rem",
+  fontWeight: "normal" as const,
+};
+
+const td = {
+  textAlign: "right" as const,
+  padding: "0.2rem 0.4rem",
+  fontSize: "0.68rem",
+  color: "#8a7a68",
+};

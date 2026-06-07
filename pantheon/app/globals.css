@@ -20,9 +20,14 @@ body {
   width: 100%;
   height: 100%;
   overflow-x: hidden;
-  background: #c8b49a;
+  background: #0d0a07;
   color: var(--text);
   font-family: Georgia, 'Times New Roman', serif;
+}
+
+/* Parchment background only inside the map stage itself */
+.map-stage {
+  background: #c8b49a;
 }
 
 body {
@@ -37,8 +42,8 @@ a {
 
 .map-app {
   position: relative;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
 }
 

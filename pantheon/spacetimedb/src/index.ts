@@ -156,21 +156,21 @@ function seedWorld(ctx: any) {
       id: 0,
       name: 'Aelthar',
       color: '#DC2626',
-      population: 50,
-      tech_level: 1,
+      population: 65,
+      tech_level: 2,
       aggression: 9,
       piety: 4,
       mercantile: 2,
       scholarly: 3,
       stability: 6,
-      leader_persona: 'Warlike iron kings...',
-      current_thought: '',
+      leader_persona: 'You are King Aelthar of the iron hills. Your people live by the sword and read omens in fire. You believe expansion is destiny — to stop is to die. You speak in short, hard sentences. You announce; you do not explain. When threatened, you attack. When blessed, you suspect a trap.',
+      current_thought: 'The Brindlefolk pray while we march. Their gods will not save them.',
       is_alive: true,
     });
     ctx.db.civilization.insert({
       id: 1,
       name: 'Brindlefolk',
-      color: '#4F46E5',
+      color: '#3B82F6',
       population: 50,
       tech_level: 1,
       aggression: 3,
@@ -178,38 +178,38 @@ function seedWorld(ctx: any) {
       mercantile: 4,
       scholarly: 5,
       stability: 5,
-      leader_persona: 'Pious coastal people...',
-      current_thought: '',
+      leader_persona: 'You are High Priestess Selune of the Brindlefolk. Your people build temples on every shore and believe the tides carry divine will. Conversion is your highest calling. You see war as a failure of faith. You speak in flowing, reverent sentences, invoking the tides, the moon, the salt wind.',
+      current_thought: 'Aelthar sharpens his swords. We sharpen our prayers.',
       is_alive: true,
     });
     ctx.db.civilization.insert({
       id: 2,
       name: 'Sapient',
-      color: '#7C3AED',
+      color: '#F59E0B',
       population: 50,
-      tech_level: 1,
+      tech_level: 2,
       aggression: 2,
       piety: 5,
       mercantile: 6,
       scholarly: 9,
       stability: 7,
-      leader_persona: 'Scholar-priests...',
-      current_thought: '',
+      leader_persona: 'You are Archon Telos of the Sapient. Your people are scholar-priests who believe knowledge is the only true power. You maintain the Silver Archive, the greatest library in the known world. War is crude. Trade is noise. Understanding is everything. You speak in measured, precise sentences and cite precedent.',
+      current_thought: 'The data suggests Aelthar will overextend within three seasons. We wait and observe.',
       is_alive: true,
     });
     ctx.db.civilization.insert({
       id: 3,
       name: 'Merchant Princes',
       color: '#0D9488',
-      population: 50,
+      population: 55,
       tech_level: 1,
       aggression: 4,
       piety: 3,
       mercantile: 9,
       scholarly: 6,
       stability: 4,
-      leader_persona: 'Wealthy trading dynasty...',
-      current_thought: '',
+      leader_persona: 'You are Prince-Chancellor Veyra of the Merchant Princes. Your civilization trades in everything: goods, favors, secrets, alliances. You prefer a deal to a sword and a contract to a prayer. You are not weak — a merchant who cannot enforce a contract is just a beggar with a ledger. You speak smoothly, name prices, propose terms.',
+      current_thought: 'War is expensive. Let Aelthar and the priests exhaust each other. We profit from both.',
       is_alive: true,
     });
 
@@ -280,7 +280,7 @@ function seedWorld(ctx: any) {
     ctx.db.territory.insert({
       id: 8,
       name: 'Crimson Pass',
-      owner_civ_id: -1,
+      owner_civ_id: 0, // Aelthar — aggressive start, already holds mountain pass
       terrain_type: 'mountain',
       has_capital: false,
       current_event: 'none',
@@ -304,7 +304,7 @@ function seedWorld(ctx: any) {
     ctx.db.territory.insert({
       id: 11,
       name: 'The Broken Steppe',
-      owner_civ_id: -1,
+      owner_civ_id: 0, // Aelthar — already expanding, feels like a threat
       terrain_type: 'plains',
       has_capital: false,
       current_event: 'none',
@@ -331,7 +331,7 @@ function seedWorld(ctx: any) {
       owner_civ_id: -1,
       terrain_type: 'mountain',
       has_capital: false,
-      current_event: 'none',
+      current_event: 'comet', // visual drama — a comet already struck before the world began
     });
     ctx.db.territory.insert({
       id: 15,
@@ -358,11 +358,19 @@ function seedWorld(ctx: any) {
       current_event: 'none',
     });
 
+    // Aelthar vs Brindlefolk — war from day one
     ctx.db.alliance.insert({
       id: 0,
       civ_a_id: 0,
       civ_b_id: 1,
       status: 'war',
+    });
+    // Merchant Princes + Sapient — trade pact opens the game with two factions
+    ctx.db.alliance.insert({
+      id: 1,
+      civ_a_id: 2,
+      civ_b_id: 3,
+      status: 'alliance',
     });
   }
 
@@ -406,15 +414,72 @@ export const onConnect = spacetimedb.clientConnected((ctx: any) => {
   }
 });
 
-// Emergency manual seed — call if init didn't run
+// Emergency manual seed — also patches civ colors on existing world
 export const forceSeed = spacetimedb.reducer((ctx: any) => {
   const existing = ctx.db.worldMeta.id.find(0);
   if (existing) {
-    ctx.db.worldMeta.id.update({ ...existing, tick_count: existing.tick_count });
+    const colorPatch: Record<number, string> = { 0: '#DC2626', 1: '#3B82F6', 2: '#F59E0B', 3: '#0D9488' };
+    for (const [id, color] of Object.entries(colorPatch)) {
+      const civ = ctx.db.civilization.id.find(Number(id));
+      if (civ) ctx.db.civilization.id.update({ ...civ, color });
+    }
     return;
   }
   seedWorld(ctx);
 });
+
+const TICKS_PER_ERA = 15; // 15 × 15s = ~3.75 min per era — fast enough for demo
+
+function scoreDirective(ctx: any, directiveIndex: number): boolean {
+  const allCivs = [...ctx.db.civilization.iter()];
+  const alive = allCivs.filter((c: any) => c.is_alive);
+  const territories = [...ctx.db.territory.iter()];
+  const alliances = [...ctx.db.alliance.iter()];
+
+  switch (directiveIndex) {
+    case 0: // Dark Age — no civ above Tech 4
+      return alive.every((c: any) => c.tech_level <= 4);
+
+    case 1: { // Pious Triumph — Brindlefolk controls most territory
+      const brindleId = allCivs.find((c: any) => c.name === 'Brindlefolk')?.id ?? 1;
+      const mine = territories.filter((t: any) => t.owner_civ_id === brindleId).length;
+      const maxOther = alive
+        .filter((c: any) => c.id !== brindleId)
+        .reduce((m: number, c: any) => Math.max(m, territories.filter((t: any) => t.owner_civ_id === c.id).length), 0);
+      return mine > maxOther;
+    }
+
+    case 2: { // Sword Wins — most aggressive civ has most territory
+      if (!alive.length) return false;
+      const top = alive.reduce((a: any, b: any) => a.aggression >= b.aggression ? a : b);
+      const topCount = territories.filter((t: any) => t.owner_civ_id === top.id).length;
+      const maxOther = alive
+        .filter((c: any) => c.id !== top.id)
+        .reduce((m: number, c: any) => Math.max(m, territories.filter((t: any) => t.owner_civ_id === c.id).length), 0);
+      return topCount > maxOther;
+    }
+
+    case 3: // New Religion — 2+ civs at piety >= 7
+      return alive.filter((c: any) => c.piety >= 7).length >= 2;
+
+    case 4: // Twin Empires — 2 civs with 6+ territories
+      return alive.filter((c: any) =>
+        territories.filter((t: any) => t.owner_civ_id === c.id).length >= 6
+      ).length >= 2;
+
+    case 5: // Old Gods Forgotten — total piety < 15
+      return alive.reduce((s: number, c: any) => s + c.piety, 0) < 15;
+
+    case 6: // Burn It Down — at least 1 civ extinct
+      return allCivs.some((c: any) => !c.is_alive);
+
+    case 7: // Peace Reigns — no active wars
+      return !alliances.some((a: any) => a.status === 'war');
+
+    default:
+      return false;
+  }
+}
 
 export const worldTick: any = spacetimedb.reducer(
   { timer: worldTickTimer.rowType },
@@ -427,6 +492,42 @@ export const worldTick: any = spacetimedb.reducer(
     if (meta.tick_count % 4 === 0) {
       meta.current_year += 1;
     }
+
+    // ── Era end ──────────────────────────────────────────────────────────────
+    if (meta.tick_count % TICKS_PER_ERA === 0) {
+      const gods = [...ctx.db.god.iter()];
+
+      if (gods.length === 0) {
+        ctx.db.chronicleEntry.insert({
+          id: 50_000_000 + ctx.random.integerInRange(0, 9_999_999),
+          tick_number: meta.tick_count,
+          entry_type: 'era',
+          civ_color: '',
+          god_color: '',
+          text: `Era ${meta.era} draws to a close. The world ages.`,
+          related_territory_id: -1,
+        });
+      } else {
+        for (const god of gods) {
+          const won = scoreDirective(ctx, god.secret_directive);
+          ctx.db.chronicleEntry.insert({
+            id: 50_000_000 + ctx.random.integerInRange(0, 9_999_999),
+            tick_number: meta.tick_count,
+            entry_type: 'era',
+            civ_color: '',
+            god_color: god.color,
+            text: won
+              ? `Era ${meta.era} ends. ${god.name} fulfilled their divine purpose. Glory eternal.`
+              : `Era ${meta.era} ends. ${god.name} failed their directive. The world moves on.`,
+            related_territory_id: -1,
+          });
+        }
+      }
+
+      meta.era += 1;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     ctx.db.worldMeta.id.update(meta);
 
     const civs = [...ctx.db.civilization.iter()].filter((c) => c.is_alive);
@@ -443,7 +544,7 @@ export const worldTick: any = spacetimedb.reducer(
       ctx.db.territory.id.update(territory);
 
       ctx.db.chronicleEntry.insert({
-        id: meta.tick_count,
+        id: 10_000_000 + meta.tick_count,
         tick_number: meta.tick_count,
         entry_type: 'action',
         civ_color: civ.color,
@@ -452,8 +553,6 @@ export const worldTick: any = spacetimedb.reducer(
         related_territory_id: territory.id,
       });
     }
-
-
   }
 );
 
@@ -550,7 +649,7 @@ export const applyCivDecision: any = spacetimedb.reducer(
     ctx.db.civilization.id.update({ ...civ, current_thought: thought });
 
     ctx.db.civAction.insert({
-      id: meta.tick_count * 10 + civ_id,
+      id: ctx.random.integerInRange(1, 9_999_999),
       civ_id,
       action_type: action,
       target,
@@ -559,7 +658,7 @@ export const applyCivDecision: any = spacetimedb.reducer(
     });
 
     ctx.db.chronicleEntry.insert({
-      id: meta.tick_count * 100 + civ_id,
+      id: 20_000_000 + ctx.random.integerInRange(0, 9_999_999),
       tick_number: meta.tick_count,
       entry_type: 'action',
       civ_color: civ.color,
@@ -573,18 +672,18 @@ export const applyCivDecision: any = spacetimedb.reducer(
 const GOD_COLORS = ['#F59E0B', '#10B981', '#EC4899', '#8B5CF6', '#EF4444', '#06B6D4', '#F97316', '#14B8A6'];
 
 const MIRACLE_COSTS: Record<string, number> = {
-  bless: 10,
-  curse: 20,
-  portent: 15,
-  inspire: 10,
-  strike: 50,
+  bless: 12,
+  curse: 25,
+  portent: 18,
+  inspire: 12,
+  strike: 55,
   reveal: 5,
 };
 
 export const joinWorld: any = spacetimedb.reducer(
   { god_name: t.string() },
   (ctx: any, { god_name }: any) => {
-    const existing = [...ctx.db.god.iter()].find((g: any) => g.identity.isEqual(ctx.sender));
+    const existing = [...ctx.db.god.iter()].find((g: any) => g.identity.toHexString() === ctx.sender.toHexString());
     if (existing) return;
 
     const usedColors = [...ctx.db.god.iter()].map((g: any) => g.color);
@@ -601,12 +700,12 @@ export const joinWorld: any = spacetimedb.reducer(
       identity: ctx.sender,
       name: god_name,
       color,
-      faith_balance: 80,
+      faith_balance: 100,
       secret_directive: directiveIndex,
     });
 
     ctx.db.chronicleEntry.insert({
-      id: godId + 1,
+      id: 30_000_000 + ctx.random.integerInRange(0, 999_999),
       tick_number: meta?.tick_count ?? 0,
       entry_type: 'event',
       civ_color: '',
@@ -620,7 +719,7 @@ export const joinWorld: any = spacetimedb.reducer(
 export const castMiracle: any = spacetimedb.reducer(
   { miracle_type: t.string(), target_id: t.u32() },
   (ctx: any, { miracle_type, target_id }: any) => {
-    const god = [...ctx.db.god.iter()].find((g: any) => g.identity.isEqual(ctx.sender));
+    const god = [...ctx.db.god.iter()].find((g: any) => g.identity.toHexString() === ctx.sender.toHexString());
     if (!god) return;
 
     const cost = MIRACLE_COSTS[miracle_type];
@@ -682,6 +781,23 @@ export const castMiracle: any = spacetimedb.reducer(
       tick_number: tickNum,
       narration: '',
     });
+
+    // Immediate chronicle entry — always written, before AI narration arrives
+    const targetsCiv = ['bless', 'portent', 'inspire', 'reveal'].includes(miracle_type);
+    const targetName = targetsCiv
+      ? (ctx.db.civilization.id.find(target_id)?.name ?? 'the world')
+      : (ctx.db.territory.id.find(target_id)?.name ?? 'the land');
+    const basicText = `${god.name} cast ${miracle_type} upon ${targetName}.`;
+
+    ctx.db.chronicleEntry.insert({
+      id: 40_000_000 + ctx.random.integerInRange(0, 9_999_999),
+      tick_number: tickNum,
+      entry_type: 'miracle',
+      civ_color: '',
+      god_color: god.color,
+      text: basicText,
+      related_territory_id: targetsCiv ? -1 : target_id,
+    });
   }
 );
 
@@ -689,13 +805,16 @@ export const castMiracle: any = spacetimedb.reducer(
 export const recordMiracleNarration: any = spacetimedb.reducer(
   { miracle_id: t.u32(), narration: t.string(), god_color: t.string() },
   (ctx: any, { miracle_id, narration, god_color }: any) => {
+    // Try to stamp the narration onto the miracle row (best-effort, ID may not match)
     const miracle = ctx.db.miracleCast.id.find(miracle_id);
-    if (!miracle) return;
-    ctx.db.miracleCast.id.update({ ...miracle, narration });
+    if (miracle) {
+      ctx.db.miracleCast.id.update({ ...miracle, narration });
+    }
 
+    // Always write the poetic narration to the chronicle regardless
     const meta = ctx.db.worldMeta.id.find(0);
     ctx.db.chronicleEntry.insert({
-      id: miracle_id + 500000,
+      id: 40_000_000 + ctx.random.integerInRange(0, 9_999_999),
       tick_number: meta?.tick_count ?? 0,
       entry_type: 'miracle',
       civ_color: '',
@@ -709,12 +828,9 @@ export const recordMiracleNarration: any = spacetimedb.reducer(
 export const regenFaith: any = spacetimedb.reducer(
   { timer: regenFaithTimer.rowType },
   (ctx: any, { timer }: any) => {
-    console.log("[regenFaith] tick fired at", new Date().toISOString());
     for (const god of ctx.db.god.iter()) {
-      god.faith_balance = Math.min(god.faith_balance + 5, 200);
+      god.faith_balance = Math.min(god.faith_balance + 6, 200);
       ctx.db.god.id.update(god);
     }
-
-
   }
 );
